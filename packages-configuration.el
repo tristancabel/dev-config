@@ -198,13 +198,21 @@
 ;; conda
 ;; to work with conda environment
 ;; ;;;;;;;;;;;;;;;;;;;;
+(defun my/eglot-reconnect-if-managed ()
+  "Reconnect the current Eglot workspace when one is active."
+  (when (and (fboundp 'eglot-current-server)
+             (fboundp 'eglot-reconnect))
+    (let ((server (eglot-current-server)))
+      (when server
+        (eglot-reconnect server)))))
+
 (defun my/conda_hook ()
-  (let* ((env-name (conda--infer-env-from-buffer))
-         (env-path (concat conda-env-home-directory "/envs/" env-name)))
-    (setq-local lsp-pyright-venv-path env-path)
-    (setq-local mode-line-process (concat "(" env-name ")"))
-    (eglot-reconnect())
-    (message "setting lsp-pyright-venv-path to %s" env-path)))
+  "Reconnect Eglot after switching Conda environments."
+  (let ((env-name (conda--infer-env-from-buffer)))
+    (when env-name
+      (setq-local mode-line-process (concat "(" env-name ")"))
+      (my/eglot-reconnect-if-managed)
+      (message "Reconnected Eglot for Conda env %s" env-name))))
 
 (use-package conda
   :ensure t
@@ -218,12 +226,18 @@
 
   :hook
   ((conda-postactivate-hook . my/conda_hook)
-   (conda-postdeactivate-hook . eglot-reconnect)))
+   (conda-postdeactivate-hook . my/eglot-reconnect-if-managed)))
 
-(add-hook 'python-mode-hook '(lambda () (when (bound-and-true-p conda-project-env-path)
-                                          (conda-env-activate-for-buffer)
-                                          (eglot-reconnect())
-                                          )))
+(add-hook 'python-mode-hook
+          #'(lambda ()
+              (when (bound-and-true-p conda-project-env-path)
+                (conda-env-activate-for-buffer)
+                (my/eglot-reconnect-if-managed))))
+(add-hook 'python-ts-mode-hook
+          #'(lambda ()
+              (when (bound-and-true-p conda-project-env-path)
+                (conda-env-activate-for-buffer)
+                (my/eglot-reconnect-if-managed))))
 ;(add-to-hook 'find-file-hook (lambda () (when (bound-and-true-p conda-project-env-path)
 ;                                          (conda-env-activate-for-buffer))))
 
@@ -256,46 +270,81 @@
 ;; company
 ;; Completion hooks
 ;; ;;;;;;;;;;;;;;;;;;;;
+(defun my/company-backends-for-current-buffer ()
+  "Return Company backends appropriate for the current buffer."
+  (let ((backends '(company-capf
+                    company-files
+                    company-dabbrev-code)))
+    (when (derived-mode-p 'qml-mode)
+      (require 'company-qml nil t)
+      (when (fboundp 'company-qml)
+        (setq backends (append backends '(company-qml)))))
+    (list backends)))
+
+(defun my/company-setup ()
+  "Prefer capf-driven completion in programming buffers."
+  (setq-local company-backends (my/company-backends-for-current-buffer))
+  (setq-local company-transformers nil))
+
 (use-package company
   :ensure t
+  :demand t
   :hook
   (after-init . global-company-mode)
-  ((c++-mode
-    c-mode
-    python-mode) . (lambda () (set (make-local-variable 'company-backends)
-                            '((company-capf
-                               company-files
-                               company-dabbrev-code
-                               company-qml
-                               )))))
+  (prog-mode . my/company-setup)
+  (json-mode . my/company-setup)
+  (qml-mode . my/company-setup)
+  (web-mode . my/company-setup)
+  (eglot-managed-mode . my/company-setup)
+  :bind (:map company-active-map
+              ("TAB" . company-complete-selection)
+              ("<tab>" . company-complete-selection)
+              ("C-n" . company-select-next)
+              ("C-p" . company-select-previous))
   :init
-  (setq company-global-modes '(not gud-mode))
+  (setq company-global-modes
+        '(not gud-mode shell-mode eshell-mode term-mode vterm-mode))
   :config
-  (setq company-idle-delay 0)
+  (setq company-idle-delay 0.15)
   (setq company-minimum-prefix-length 1)
+  (setq company-require-match 'never)
   (setq company-selection-wrap-around t)
-  (setq company-tooltip-limit 10)
-  (setq company-dabbrev-downcase nil) ; completion in case-sensitie mode
+  (setq company-tooltip-align-annotations t)
+  (setq company-tooltip-limit 12)
+  (setq company-dabbrev-downcase nil) ; completion in case-sensitive mode
   (setq company-dabbrev-ignore-case nil)
-  (setq company-show-numbers t)
-  )
+  (setq company-show-quick-access t))
 
-;; add icons to cmpany backends
+;; add icons to company backends when child frames are available
+(defun my/company-box-setup ()
+  "Enable company-box in graphical sessions."
+  (when (display-graphic-p)
+    (company-box-mode 1)))
+
 (use-package company-box
   :ensure t
   :after company
   :delight
-  :hook (company-mode . company-box-mode))
+  :hook (company-mode . my/company-box-setup))
 
 ;; company colors
 (require 'color)
-(let ((bg (face-attribute 'default :background)))
-  (custom-set-faces
-   `(company-tooltip ((t (:inherit default :background ,(color-lighten-name bg 2)))))
-   `(company-scrollbar-bg ((t (:background ,(color-lighten-name bg 10)))))
-   `(company-scrollbar-fg ((t (:background ,(color-lighten-name bg 5)))))
-   `(company-tooltip-selection ((t (:inherit font-lock-function-name-face))))
-   `(company-tooltip-common ((t (:inherit font-lock-constant-face))))))
+
+(defun my/company-apply-theme (&rest _)
+  "Update Company faces to match the active theme."
+  (let* ((bg (face-background 'default nil t))
+         (base-bg (if (and (stringp bg) (color-defined-p bg))
+                      bg
+                    "#2b2b2b")))
+    (custom-set-faces
+     `(company-tooltip ((t (:inherit default :background ,(color-lighten-name base-bg 2)))))
+     `(company-scrollbar-bg ((t (:background ,(color-lighten-name base-bg 10)))))
+     `(company-scrollbar-fg ((t (:background ,(color-lighten-name base-bg 5)))))
+     `(company-tooltip-selection ((t (:inherit font-lock-function-name-face))))
+     `(company-tooltip-common ((t (:inherit font-lock-constant-face)))))))
+
+(my/company-apply-theme)
+(advice-add 'load-theme :after #'my/company-apply-theme)
 
 
 ;; cmake stuff
@@ -354,22 +403,68 @@
 ;(add-hook 'post-command-hook #'my/flymake-show-error)
 
 
-;; pyright  -- lsp for python
-;; ;; ;;;;;;;;;;;;;;;;;;;
+;; language servers / eglot
+;; ;;;;;;;;;;;;;;;;;;;;;;;
 
-(use-package lsp-pyright
-  :ensure t)
+(defvar my/ccls-executable-candidates
+  '("ccls"
+    "~/Tools/ccls/Release/ccls"
+    "~/Tools/ccls/Release/bin/ccls"
+    "~/Tools/ccls/build/Release/ccls")
+  "Candidate locations for the ccls executable.")
 
-;; ;; eglot
-;; ;; ;;;;;;;;;;;;;;;;;;;
+(defvar my/clangd-executable-candidates
+  '("clangd"
+    "clangd-18"
+    "clangd-17"
+    "clangd-16"
+    "clangd-15"
+    "clangd-14"
+    "clangd-13")
+  "Candidate executable names for clangd.")
+
+(defun my/find-executable (candidates)
+  "Return the first executable found in CANDIDATES."
+  (catch 'match
+    (dolist (candidate candidates)
+      (let ((path (cond
+                   ((file-name-absolute-p candidate)
+                    (and (file-executable-p candidate) candidate))
+                   ((string-prefix-p "~/" candidate)
+                    (let ((expanded (expand-file-name candidate)))
+                      (and (file-executable-p expanded) expanded)))
+                   (t
+                    (executable-find candidate)))))
+        (when path
+          (throw 'match path))))))
+
+(defun my/eglot-cpp-contact ()
+  "Return the preferred Eglot server command for C and C++."
+  (let ((ccls (my/find-executable my/ccls-executable-candidates)))
+    (if ccls
+        `(,ccls
+          :initializationOptions
+          (:index (:comments 2)
+           :completion (:detailedLabel t)))
+      (let ((clangd (or (my/find-executable my/clangd-executable-candidates)
+                        "clangd")))
+        `(,clangd
+          "--background-index"
+          "--clang-tidy"
+          "--completion-style=detailed"
+          "--cross-file-rename"
+          "--header-insertion=never"
+          "--malloc-trim"
+          "--pch-storage=memory")))))
 
 (use-package eglot
-  :ensure t
-  :after projectile
+  :ensure nil
   :commands (eglot eglot-ensure)
   :hook ((rust-mode . eglot-ensure)
          (c-mode . eglot-ensure)
+         (c-ts-mode . eglot-ensure)
          (c++-mode . eglot-ensure)
+         (c++-ts-mode . eglot-ensure)
          (python-mode . eglot-ensure)
          (web-mode . eglot-ensure)       ; no linting
          (js-mode . eglot-ensure)
@@ -387,17 +482,8 @@
   ;; Enable eglot in code external to project
   (eglot-extend-to-xref t)
   :config
-  ;;(add-to-list 'eglot-server-programs '((c-mode c++-mode) "ccls"
-  ;;                                      "-init={\"compilationDatabaseDirectory\":\"build\"}"))                                        ;  (company-transformers nil)
-  (add-to-list 'eglot-server-programs '((c-mode c++-mode) "clangd-13"
-                    "-j=4"
-                    "--malloc-trim"
-                    "--log=error"
-                    "--background-index"
-                    "--clang-tidy"
-                    "--cross-file-rename"
-                    "--completion-style=detailed"
-                    "--pch-storage=memory"))
+  (add-to-list 'eglot-server-programs
+               '((c-mode c-ts-mode c++-mode c++-ts-mode) . my/eglot-cpp-contact))
   ; Add server for web-mode
   ;(add-to-list 'eglot-server-programs
   ;             '(web-mode . ("vscode-html-language-server" "--stdio")))

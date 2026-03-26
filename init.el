@@ -38,11 +38,9 @@
 ;; dash -> A modern list api for Emacs. No 'cl required.
 ;; flycheck -> syntax checker
 ;; git-gutter -> to have + = on line changes by git
-;; ccls -> replace cquery. c++ front end for language server protocol (eglot)
-;;;;; eglot -> Language Server Protocol back end
-;; lsp-mode  -> Language Server Protocol back end
-;; lsp-ui -> UI modules of lsp-mode
-;; lsp-python-ms -> python for lsp mode
+;; eglot -> built-in Language Server Protocol client
+;; ccls / clangd -> C and C++ language servers
+;; pyright -> python language server
 ;; projectile -> project interaction library for Emacs.
 ;; helm -> Emacs incremental completion and selection narrowing framework
 ;; helm-ag -> helm with ag for search
@@ -64,16 +62,20 @@
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; variable configurations
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(load-file "~/.emacs.d/variables-configuration.el")
-(load-file "~/.emacs.d/qml-mode.el")
+(defconst my/emacs-config-directory
+  (file-name-directory (or load-file-name buffer-file-name))
+  "Root directory of this Emacs configuration.")
+
+(load-file (expand-file-name "variables-configuration.el" my/emacs-config-directory))
+(load-file (expand-file-name "qml-mode.el" my/emacs-config-directory))
 
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Modes setup
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (add-to-list 'auto-mode-alist '("\\.scala\\'"       . scala-mode))
-(add-to-list 'auto-mode-alist '("\\.h\\'"           . c++-mode))
-(add-to-list 'auto-mode-alist '("\\.c\\'"           . c++-mode))
+(add-to-list 'auto-mode-alist '("\\.h\\'"           . c-or-c++-mode))
+(add-to-list 'auto-mode-alist '("\\.c\\'"           . c-mode))
 (add-to-list 'auto-mode-alist '("\\.cc$"            . c++-mode))
 (add-to-list 'auto-mode-alist '("\\.C$"             . c++-mode))
 (add-to-list 'auto-mode-alist '("\\.cpp$"           . c++-mode))
@@ -96,7 +98,7 @@
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; packages configuration
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(load-file "~/.emacs.d/packages-configuration.el")
+(load-file (expand-file-name "packages-configuration.el" my/emacs-config-directory))
 (custom-set-variables
  ;; custom-set-variables was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
@@ -105,10 +107,8 @@
  '(conda-anaconda-home "/home/trcabel/miniconda3/" t)
  '(ispell-dictionary nil)
  '(ivy-mode t)
- '(lsp-auto-guess-root nil)
- '(lsp-prefer-flymake nil t)
  '(package-selected-packages
-   '(company-qml js2-mode lsp-bridge browse-kill-ring markdown-mode json-mode conda projectile counsel ivy which-key beacon git-gutter-fringe magit which-key-mode beacon-mode undo-tree smart-mode-line use-package))
+   '(company-box company company-qml js2-mode lsp-bridge browse-kill-ring markdown-mode json-mode conda projectile counsel ivy which-key beacon git-gutter-fringe magit which-key-mode beacon-mode undo-tree smart-mode-line use-package))
  '(safe-local-variable-values
    '((eval setq conda-project-env-path "gnomon")
      (conda-project-env-path . "gnomon")
@@ -119,10 +119,8 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(company-scrollbar-bg ((t (:background "#45bb4ed351db"))) t)
- '(company-scrollbar-fg ((t (:background "#39f441834408"))) t)
- '(company-tooltip ((t (:inherit default :background "#32e339873bbd"))))
+ '(company-tooltip ((t (:inherit default :background "#2f1a353f374b"))))
  '(company-tooltip-common ((t (:inherit font-lock-constant-face))))
- '(company-tooltip-scrollbar-thumb ((t (:background "#39f441834408"))))
- '(company-tooltip-scrollbar-track ((t (:background "#45bb4ed351db"))))
+ '(company-tooltip-scrollbar-thumb ((t (:background "#307d36d038eb"))))
+ '(company-tooltip-scrollbar-track ((t (:background "#32cc396c3ba1"))))
  '(company-tooltip-selection ((t (:inherit font-lock-function-name-face)))))

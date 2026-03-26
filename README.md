@@ -2,21 +2,35 @@ This is my current emacs-config
 
 # Dependencies
 
-The current dependencies are: *clang*, *libclang-dev*, *pyls*
+The current LSP dependencies are:
 
-for JEDI (python lsp-server):
+- `eglot` (built into Emacs 29)
+- `clangd` or `ccls` for C/C++
+- `pyright` for Python
+
+## C and C++
+
+This config prefers `ccls` when it is installed and falls back to
+`clangd` automatically otherwise.
+
+### clangd
+`sudo apt-get install clangd`
+
+### ccls
+If your distro packages it, install it directly. Otherwise build it from source:
+
 ```
-pip install -U jedi-language-server
-```
-to enable python debugging with **dap-mode**, do the folowwing:
-```
-pip install "ptvsd>=4.2"
+cd ~/Tools
+git clone --depth=1 --recursive https://github.com/MaskRay/ccls/
+cd ccls
+cmake -H. -BRelease -DCMAKE_BUILD_TYPE=Release
+cmake --build Release
+export PATH="$PATH:/home/trcabel/Tools/ccls/Release"
 ```
 
-## clangd
-`sudo apt-get install clangd-13`
+## Python
 
-## pyright
+### pyright
 `conda install -c conda-forge pyright`
 
 # Install
@@ -25,29 +39,6 @@ To install this emacs config, create a symbolic link from `~.emacs.d` to this di
 ```
 cd ~
 ln -s ~/Tools/emacs-config .emacs.d
-```
-
-## [DEPRECATED use clangd instead] ccls install
-
-Do the following commands:
-
-```
-cd ~/Tools
-git clone --depth=1 --recursive https://github.com/MaskRay/ccls/
-cd ccls
-cmake -H. -BRelease -DCMAKE_BUILD_TYPE=Release
-cmake --build Release
-```
-
-The executable will be at *build/Release/ccls*, you shloud add it to your path in **~/.bashrc** file
-`export PATH="$PATH:/home/trcabel/Tools/ccls/Release/"`
-
-## [DEPRECATED] pyls
-
-for **pyls** do the following:
-```
-pip install 'python-language-server[all]'
-pip3 install 'python-language-server[all]'
 ```
 
 ## [DEPRECATED] lsp-bridge
