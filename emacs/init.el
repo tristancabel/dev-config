@@ -55,6 +55,8 @@
 ;; which-key -> which-key is a minor mode for Emacs that displays the key bindings following your currently entered incomplete command
 ;; neotree -> tree navigation mode (activated on F8)
 ;; rainbow-mode -> colorize color names
+;; eat -> terminal emulator? 
+;; pi-coding-agent -> pi coding agent
 ;;
 ;; ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (setq url-http-attempt-keepalives nil)
@@ -104,11 +106,11 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- '(conda-anaconda-home "/home/trcabel/miniconda3/" t)
+ ;;'(conda-anaconda-home "/home/trcabel/miniconda3/" t)
  '(ispell-dictionary nil)
  '(ivy-mode t)
  '(package-selected-packages
-   '(company-box company company-qml js2-mode lsp-bridge browse-kill-ring markdown-mode json-mode conda projectile counsel ivy which-key beacon git-gutter-fringe magit which-key-mode beacon-mode undo-tree smart-mode-line use-package))
+   '(eat company-box company company-qml js2-mode lsp-bridge browse-kill-ring markdown-mode json-mode conda projectile counsel ivy which-key beacon git-gutter-fringe magit which-key-mode beacon-mode undo-tree smart-mode-line use-package))
  '(safe-local-variable-values
    '((eval setq conda-project-env-path "gnomon")
      (conda-project-env-path . "gnomon")

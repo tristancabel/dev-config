@@ -303,7 +303,7 @@
               ("C-p" . company-select-previous))
   :init
   (setq company-global-modes
-        '(not gud-mode shell-mode eshell-mode term-mode vterm-mode))
+        '(not gud-mode shell-mode eshell-mode term-mode vterm-mode eat-mode))
   :config
   (setq company-idle-delay 0.15)
   (setq company-minimum-prefix-length 1)
@@ -528,3 +528,82 @@
 (use-package yasnippet
   :ensure t
   :config (yas-global-mode 1))
+
+;; terminal emulator
+;; ;;;;;;;;;;;;;;;;;;;;
+(use-package eat
+  :ensure t
+  :commands (eat))
+
+;; neotree
+;; ;;;;;;;;;;;;;;;;;;;;
+(use-package neotree
+ :ensure t)
+(global-set-key [f8] 'neotree-toggle)
+
+
+;; Pi coding agent
+;; ;;;;;;;;;;;;;;;;;;;;
+(require 'term)
+
+(defun my/pi-agent--command (continue-last-session)
+  "Return the shell command used to launch Pi.
+CONTINUE-LAST-SESSION controls whether Pi should resume the previous session."
+  (concat (shell-quote-argument (executable-find "pi"))
+          (when continue-last-session " -c")))
+
+(defun my/pi-agent--start-in-eat (command)
+  "Start Pi using Eat with COMMAND."
+  (let ((current-prefix-arg '(4)))
+    (call-interactively #'eat))
+  (let ((buffer (current-buffer)))
+    (rename-buffer "*pi*" t)
+    (when (fboundp 'eat-char-mode)
+      (eat-char-mode))
+    (when-let ((process (get-buffer-process buffer)))
+      (process-send-string process (concat command "\n")))
+    (pop-to-buffer buffer)))
+
+(defun my/pi-agent--start-in-ansi-term (shell command)
+  "Start Pi using `ansi-term' with SHELL and COMMAND."
+  (let* ((process-environment (cons "TERM=xterm-256color" process-environment))
+         (term-buffer (ansi-term shell "pi")))
+    (with-current-buffer term-buffer
+      (rename-buffer "*pi*" t)
+      (term-char-mode)
+      (term-send-raw-string (concat command "\n")))
+    (pop-to-buffer term-buffer)))
+
+(defun my/pi-agent (&optional continue-last-session)
+  "Launch Pi in a dedicated terminal buffer.
+With prefix argument CONTINUE-LAST-SESSION, resume the last Pi session."
+  (interactive "P")
+  (let* ((pi-command (executable-find "pi"))
+         (project-root (or (and (fboundp 'projectile-project-root)
+                                (ignore-errors (projectile-project-root)))
+                           default-directory))
+         (default-directory project-root)
+         (buffer-name "*pi*")
+         (command nil)
+         (shell (or explicit-shell-file-name
+                    (getenv "SHELL")
+                    "/bin/bash")))
+    (unless pi-command
+      (user-error
+       "Pi executable not found. Install with: npm install -g @mariozechner/pi-coding-agent"))
+    (setq command (my/pi-agent--command continue-last-session))
+    (let ((buffer (get-buffer buffer-name)))
+      (if (and buffer (get-buffer-process buffer))
+          (pop-to-buffer buffer)
+        (when buffer
+          (kill-buffer buffer))
+        (cond
+         ((fboundp 'eat)
+          (my/pi-agent--start-in-eat command))
+         (t
+          (my/pi-agent--start-in-ansi-term shell command)))))))
+
+(global-set-key (kbd "C-c P") #'my/pi-agent)
+
+(with-eval-after-load 'projectile
+  (define-key projectile-command-map (kbd "P") #'my/pi-agent))

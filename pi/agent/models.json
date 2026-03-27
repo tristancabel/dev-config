@@ -1,0 +1,9 @@
+{
+  "providers": {
+    "mistral": {
+      "baseUrl": "https://codestral.mistral.ai/v1",
+      "apikey": "$MISTRAL_SECRET"
+    }
+  },
+  "defaultModel":"mistral/codestral-latest"
+}

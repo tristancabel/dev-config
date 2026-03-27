@@ -1,0 +1,30 @@
+{
+  "deny": [
+    {
+      "command": "rm -rf /",
+      "message": "Nice try, but I like my root directory where it is."
+    },
+    {
+      "command": "^pip install.*",
+      "message": "STOP. Use 'pixi add' or 'pixi run pip install' to stay inside the environment."
+    },
+    {
+      "command": "^python -m pip.*",
+      "message": "Global pip detected. Please use the Pixi toolchain."
+    },
+    {
+      "command": "^sudo.*",
+      "message": "Sudo commands are disabled for safety. Use local environment tools."
+    }
+  ],
+  "confirm": [
+    {
+      "command": "rm -rf .*",
+      "message": "Are you sure you want to delete these files recursively?"
+    },
+    {
+      "command": "pixi run python.*delete.*",
+      "message": "The script appears to have deletion logic. Proceed?"
+    }
+  ]
+}
