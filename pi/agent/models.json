@@ -5,12 +5,34 @@
       "apikey": "${MISTRAL_SECRET}"
     }
   },
-  "defaultModel":"mistral/codestral-latest",
+  "defaultModel": "mistral/codestral-latest",
+  "defaultThinkingLevel": "medium",
 
   "routing": {
-    "scout": "mistral/codestral-latest",
-    "planner": "mistral/codestral-latest",
-    "builder": "mistral/codestral-latest",
-    "reviewer": "mistral/codestral-latest"
+    "scout": {
+      "provider": "mistral",
+      "model": "codestral-latest",
+      "thinkingLevel": "low"
+    },
+    "planner": {
+      "provider": "mistral",
+      "model": "codestral-latest",
+      "thinkingLevel": "high"
+    },
+    "builder": {
+      "provider": "mistral",
+      "model": "codestral-latest",
+      "thinkingLevel": "medium"
+    },
+    "reviewer": {
+      "provider": "mistral",
+      "model": "codestral-latest",
+      "thinkingLevel": "high"
+    },
+    "verifier": {
+      "provider": "mistral",
+      "model": "codestral-latest",
+      "thinkingLevel": "medium"
+    }
   }
 }
