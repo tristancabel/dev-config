@@ -539,7 +539,7 @@
 ;; ;;;;;;;;;;;;;;;;;;;;
 (use-package neotree
  :ensure t)
-(global-set-key [f8] 'neotree-toggle)
+(global-set-key (kbd "C-c n") #'neotree-toggle)
 
 
 ;; Pi coding agent

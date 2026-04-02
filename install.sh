@@ -26,7 +26,7 @@ pi install npm:pi-web-access
 pi install npm:pi-brave-search
 pi install npm:pi-md-export
 pi install npm:pi-anycopy
-pi install npm:marckrenn/pi-sub-bar
+#pi install npm:marckrenn/pi-sub-bar
 pi install npm:pi-agentic-compaction
 pi install npm:pi-peon-ping
 pi install npm:@aliou/pi-guardrails

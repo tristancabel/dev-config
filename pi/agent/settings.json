@@ -1,0 +1,11 @@
+{
+  "packages": [
+    "npm:pi-web-access",
+    "npm:pi-brave-search",
+    "npm:pi-md-export",
+    "npm:pi-anycopy",
+    "npm:pi-agentic-compaction",
+    "npm:pi-peon-ping",
+    "npm:@aliou/pi-guardrails"
+  ]
+}

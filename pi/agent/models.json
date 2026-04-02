@@ -2,8 +2,15 @@
   "providers": {
     "mistral": {
       "baseUrl": "https://codestral.mistral.ai/v1",
-      "apikey": "$MISTRAL_SECRET"
+      "apikey": "${MISTRAL_SECRET}"
     }
   },
-  "defaultModel":"mistral/codestral-latest"
+  "defaultModel":"mistral/codestral-latest",
+
+  "routing": {
+    "scout": "mistral/codestral-latest",
+    "planner": "mistral/codestral-latest",
+    "builder": "mistral/codestral-latest",
+    "reviewer": "mistral/codestral-latest"
+  }
 }
