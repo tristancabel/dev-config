@@ -78,8 +78,16 @@ type VerificationContext = {
 	changedFiles: string[];
 };
 
+type WorktreeState = {
+	enabled?: boolean;
+	path?: string;
+	rootPath?: string;
+	name?: string;
+};
+
 const PROFILE_STATE_TYPE = "pi-profile-state";
 const EFFORT_STATE_TYPE = "pi-effort-state";
+const WORKTREE_STATE_TYPE = "pi-worktree-state";
 const DEFAULT_PROFILE = "builder";
 const PERSONA_STATUS_KEY = "pi-persona";
 const PLAN_STATUS_KEY = "pi-plan";
@@ -767,6 +775,7 @@ function buildVerificationSection(context: VerificationContext): string {
 
 function buildWorkflowSection(
 	cwd: string,
+	executionCwd: string,
 	profileName: string,
 	profile: ProfileDefinition,
 	mode: PermissionMode,
@@ -785,6 +794,15 @@ function buildWorkflowSection(
 		"",
 		profile.instructions.trim(),
 	];
+
+	if (executionCwd !== cwd) {
+		lines.push(
+			"",
+			`Execution workspace: \`${formatWorkspacePath(cwd, executionCwd)}\` (isolated worktree)`,
+			"- Use that workspace for reads, searches, bash commands, and edits",
+			"- Keep verification and change analysis aligned with the active worktree state",
+		);
+	}
 
 	if (profileName === "planner") {
 		lines.push(
@@ -869,6 +887,20 @@ function getLatestCustomEntryData<T>(ctx: ExtensionContext, customType: string):
 		.pop() as { data?: T } | undefined;
 
 	return entry?.data;
+}
+
+function getExecutionCwd(ctx: ExtensionContext): string {
+	const worktreeState = getLatestCustomEntryData<WorktreeState>(ctx, WORKTREE_STATE_TYPE);
+	if (!worktreeState?.enabled || !worktreeState.path || !existsSync(worktreeState.path)) {
+		return ctx.cwd;
+	}
+	return worktreeState.path;
+}
+
+function formatWorkspacePath(baseCwd: string, executionCwd: string): string {
+	const relPath = relative(baseCwd, executionCwd);
+	if (!relPath || relPath.length === 0) return ".";
+	return relPath.startsWith("..") ? executionCwd : relPath;
 }
 
 export default function personaExtension(pi: ExtensionAPI): void {
@@ -996,7 +1028,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		ctx.ui.setStatus(EFFORT_STATUS_KEY, ctx.ui.theme.fg("muted", effortLabel));
 
 		if (activeProfileName === "verifier") {
-			const verificationContext = inferVerificationContext(ctx.cwd, plan);
+			const verificationContext = inferVerificationContext(getExecutionCwd(ctx), plan);
 			ctx.ui.setStatus(VERIFY_STATUS_KEY, ctx.ui.theme.fg("warning", `verify:${formatVerificationLabel(verificationContext)}`));
 		} else {
 			ctx.ui.setStatus(VERIFY_STATUS_KEY, undefined);
@@ -1296,7 +1328,8 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		const plan = readPlan(ctx.cwd);
 		const allToolNames = pi.getAllTools().map((tool) => tool.name);
 		const route = resolveModelRoute(activeProfileName, profile, loadedModels);
-		const verificationContext = activeProfileName === "verifier" ? inferVerificationContext(ctx.cwd, plan) : undefined;
+		const executionCwd = getExecutionCwd(ctx);
+		const verificationContext = activeProfileName === "verifier" ? inferVerificationContext(executionCwd, plan) : undefined;
 
 		if (activeProfileName === "verifier") {
 			verifierCommandsThisTurn = [];
@@ -1308,6 +1341,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		return {
 			systemPrompt: `${event.systemPrompt}\n\n${buildWorkflowSection(
 				ctx.cwd,
+				executionCwd,
 				activeProfileName,
 				profile,
 				getEffectivePermissionMode(activeProfileName, profile, plan),

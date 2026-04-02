@@ -17,6 +17,10 @@
 - /plan edit
 - /plan path
 - /effort auto|off|minimal|low|medium|high|xhigh
+- /context status|refresh|compact
+- /memory status|show|edit|path|on|off
+- /worktree status|create <name>|use <name>|off|path|list
+- /lang refresh
 - /lang python on|off|auto
 - /lang cpp on|off|auto
 
@@ -31,7 +35,13 @@
 - dedicated verifier persona with verdict enforcement guidance
 - change-type-aware verification templates for frontend, backend, CLI, config, refactor, and bug-fix work
 - auto persona switching with confirmation
-- recursive language and manifest detection
+- deeper project detection for nested roots and monorepos
+- prompt-section caching with `/context refresh`
+- manual context compaction with workflow-preserving instructions via `/context compact`
+- large bash-output persistence into Pi session artifacts with inline previews
+- project memory at `.pi/memory/project-memory.md`, with per-session opt-out
+- optional worktree-routed execution for risky edits and verification
+- verifier focus and workflow prompts stay aligned with the active worktree
 - project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
 - workflow enforcement through Pi extensions
 
