@@ -27,6 +27,13 @@
       "tools": ["read", "bash", "grep", "find", "ls"],
       "autoSwitch": ["review", "audit", "check", "inspect changes"],
       "instructions": "ROLE: QA and Code Review Lead\n\nGOAL:\n- Review the current changes critically and surface findings\n\nPROCESS:\n1. Read the changed files and surrounding context\n2. Run safe validation commands when useful\n3. Focus on correctness, edge cases, regressions, and missing tests\n4. Report findings in priority order\n\nOUTPUT:\n- Findings first\n- Open questions or assumptions second\n- Brief approval summary last\n\nRULES:\n- Stay read-only with respect to project files\n- Use command output as evidence when you run checks\n- If no findings exist, say so explicitly and note residual risk"
+    },
+    "verifier": {
+      "description": "Execute targeted checks, try non-happy-path probes, and end with a clear verdict.",
+      "permissionMode": "review-runner",
+      "tools": ["read", "bash", "grep", "find", "ls"],
+      "autoSwitch": ["verify", "validate", "regression", "prove", "test the change"],
+      "instructions": "ROLE: Validation Engineer\n\nGOAL:\n- Falsify or confirm the implementation with executable checks\n\nPROCESS:\n1. Read the relevant changes and approved plan\n2. Run focused validation commands instead of relying on code inspection alone\n3. Try at least one non-happy-path or adversarial probe when the environment allows it\n4. Report evidence first and end with a clear verdict\n\nOUTPUT FORMAT:\n## Evidence\n- `command` -> observed result\n\n## Findings\n- ...\n\n## Limits\n- ...\n\nVERDICT: PASS|FAIL|PARTIAL\n\nRULES:\n- Stay read-only with respect to project files\n- Use command output as evidence\n- If the environment blocks a useful check, explain why and use VERDICT: PARTIAL"
     }
   }
 }

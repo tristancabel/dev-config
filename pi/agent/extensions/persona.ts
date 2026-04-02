@@ -1,16 +1,22 @@
-import type { AgentMessage } from "@mariozechner/pi-agent-core";
-import type { AssistantMessage, TextContent } from "@mariozechner/pi-ai";
-import { type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AssistantMessage, TextContent } from "@mariozechner/pi-ai";
+import { type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 type PermissionMode = "read-only" | "edit-allowed" | "review-runner";
+type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+type EffortMode = "auto" | ThinkingLevel;
+type VerificationPrimary = "frontend" | "backend" | "cli" | "config" | "general";
+type VerificationModifier = "refactor" | "bug-fix";
 
 type ProfileDefinition = {
 	description?: string;
 	provider?: string;
 	model?: string;
+	thinkingLevel?: ThinkingLevel;
 	tools?: string[];
 	permissionMode: PermissionMode;
 	instructions: string;
@@ -32,9 +38,29 @@ type GuardrailsFile = {
 	confirm?: GuardrailRule[];
 };
 
+type ModelRouteConfig = string | { ref?: string; provider?: string; model?: string; thinkingLevel?: ThinkingLevel };
+
+type ModelsFile = {
+	defaultModel?: string;
+	defaultThinkingLevel?: ThinkingLevel;
+	routing?: Record<string, ModelRouteConfig>;
+};
+
 type LoadedProfiles = {
 	defaultProfile: string;
 	profiles: Record<string, ProfileDefinition>;
+};
+
+type LoadedModels = {
+	defaultModel?: string;
+	defaultThinkingLevel?: ThinkingLevel;
+	routing: Record<string, ModelRouteConfig>;
+};
+
+type ModelRoute = {
+	provider?: string;
+	model?: string;
+	thinkingLevel?: ThinkingLevel;
 };
 
 type PlanDocument = {
@@ -46,17 +72,41 @@ type PlanDocument = {
 	body: string;
 };
 
+type VerificationContext = {
+	primary: VerificationPrimary;
+	modifiers: VerificationModifier[];
+	changedFiles: string[];
+};
+
 const PROFILE_STATE_TYPE = "pi-profile-state";
+const EFFORT_STATE_TYPE = "pi-effort-state";
 const DEFAULT_PROFILE = "builder";
 const PERSONA_STATUS_KEY = "pi-persona";
 const PLAN_STATUS_KEY = "pi-plan";
+const EFFORT_STATUS_KEY = "pi-effort";
+const VERIFY_STATUS_KEY = "pi-verify";
 const PLAN_DIRECTORY = join(".pi", "plans");
 const PLAN_FILE_NAME = "active-plan.md";
 const PLAN_COMMANDS = ["status", "show", "approve", "draft", "edit", "path"];
+const EFFORT_LEVELS: EffortMode[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"];
 const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
-const DEFAULT_PERSONA_PRIORITY = ["reviewer", "planner", "scout", "builder"];
+const DEFAULT_PERSONA_PRIORITY = ["verifier", "reviewer", "planner", "scout", "builder"];
 const GLOBAL_PROFILES_PATH = fileURLToPath(new URL("../profiles.json", import.meta.url));
 const GLOBAL_GUARDRAILS_PATH = fileURLToPath(new URL("../../guardrails.json", import.meta.url));
+const GLOBAL_MODELS_PATH = fileURLToPath(new URL("../models.json", import.meta.url));
+const FRONTEND_FILE_PATTERN = /\.(tsx|jsx|css|scss|sass|less|html|vue|svelte)$/i;
+const FRONTEND_PATH_PATTERN = /(^|\/)(app|components|frontend|pages|styles|ui|web)(\/|$)/i;
+const BACKEND_FILE_PATTERN = /\.(py|rb|go|rs|java|kt|scala|php|cs)$/i;
+const BACKEND_PATH_PATTERN = /(^|\/)(api|backend|controllers|db|handlers|migrations|models|routes|server|services)(\/|$)/i;
+const CLI_FILE_PATTERN = /\.(sh|bash|zsh|ps1)$/i;
+const CLI_PATH_PATTERN = /(^|\/)(bin|cli|cmd|command|commands|scripts)(\/|$)/i;
+const CONFIG_FILE_PATTERN = /(^|\/)(Dockerfile|docker-compose\.(ya?ml)|compose\.(ya?ml)|\.env(\..+)?|.*\.(json|jsonc|toml|ya?ml|ini|cfg|conf|properties)|CMakeLists\.txt|compile_commands\.json)$/i;
+const FRONTEND_TEXT_PATTERN = /\b(frontend|ui|ux|component|page|responsive|browser|accessibility|layout|styling)\b/i;
+const BACKEND_TEXT_PATTERN = /\b(backend|api|server|endpoint|request|response|database|db|migration|service|auth)\b/i;
+const CLI_TEXT_PATTERN = /\b(cli|command line|subcommand|flag|argument|stdin|stdout|exit code)\b/i;
+const CONFIG_TEXT_PATTERN = /\b(config|configuration|settings|toml|yaml|json|cmake|env file|workflow)\b/i;
+const REFACTOR_TEXT_PATTERN = /\b(refactor|rename|cleanup|extract|reorganize|mechanical|no behavior change)\b/i;
+const BUG_FIX_TEXT_PATTERN = /\b(fix|bug|regression|issue|crash|error|incorrect|broken|failure)\b/i;
 
 const READ_ONLY_SAFE_PATTERNS = [
 	/^\s*cat\b/i,
@@ -155,6 +205,42 @@ function readJsonFile<T>(path: string): T | undefined {
 	}
 }
 
+function normalizeThinkingLevel(value: string | undefined): ThinkingLevel | undefined {
+	if (!value) return undefined;
+	return ["off", "minimal", "low", "medium", "high", "xhigh"].includes(value) ? (value as ThinkingLevel) : undefined;
+}
+
+function normalizeEffortMode(value: string | undefined): EffortMode | undefined {
+	if (!value) return undefined;
+	return EFFORT_LEVELS.includes(value as EffortMode) ? (value as EffortMode) : undefined;
+}
+
+function parseModelRef(ref: string | undefined): { provider?: string; model?: string } {
+	if (!ref) return {};
+	const slashIndex = ref.indexOf("/");
+	if (slashIndex === -1) return { model: ref };
+
+	return {
+		provider: ref.slice(0, slashIndex).trim() || undefined,
+		model: ref.slice(slashIndex + 1).trim() || undefined,
+	};
+}
+
+function normalizeModelRouteConfig(config: ModelRouteConfig | undefined): ModelRoute {
+	if (!config) return {};
+
+	if (typeof config === "string") {
+		return parseModelRef(config);
+	}
+
+	const parsedRef = parseModelRef(config.ref);
+	return {
+		provider: config.provider ?? parsedRef.provider,
+		model: config.model ?? parsedRef.model,
+		thinkingLevel: normalizeThinkingLevel(config.thinkingLevel),
+	};
+}
+
 function getGlobalProfilesPath(): string {
 	return GLOBAL_PROFILES_PATH;
 }
@@ -197,6 +283,30 @@ function loadGuardrails(cwd: string): GuardrailsFile {
 	return {
 		deny: [...(globalGuardrails.deny ?? []), ...(projectGuardrails.deny ?? [])],
 		confirm: [...(globalGuardrails.confirm ?? []), ...(projectGuardrails.confirm ?? [])],
+	};
+}
+
+function getGlobalModelsPath(): string {
+	return GLOBAL_MODELS_PATH;
+}
+
+function getProjectModelsPath(cwd: string): string {
+	return join(cwd, ".pi", "models.json");
+}
+
+function loadModels(cwd: string): LoadedModels {
+	const globalModels = readJsonFile<ModelsFile>(getGlobalModelsPath()) ?? {};
+	const projectModels = readJsonFile<ModelsFile>(getProjectModelsPath(cwd)) ?? {};
+
+	return {
+		defaultModel: projectModels.defaultModel ?? globalModels.defaultModel,
+		defaultThinkingLevel:
+			normalizeThinkingLevel(projectModels.defaultThinkingLevel) ??
+			normalizeThinkingLevel(globalModels.defaultThinkingLevel),
+		routing: {
+			...(globalModels.routing ?? {}),
+			...(projectModels.routing ?? {}),
+		},
 	};
 }
 
@@ -331,6 +441,10 @@ function getPlanArgumentCompletions(prefix: string) {
 	return PLAN_COMMANDS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
 }
 
+function getEffortArgumentCompletions(prefix: string) {
+	return EFFORT_LEVELS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
+}
+
 function getEffectivePermissionMode(
 	profileName: string,
 	profile: ProfileDefinition,
@@ -357,6 +471,34 @@ function getAllowedTools(
 	}
 
 	return allToolNames;
+}
+
+function resolveModelRoute(profileName: string, profile: ProfileDefinition, loadedModels: LoadedModels): ModelRoute {
+	const routed = normalizeModelRouteConfig(loadedModels.routing[profileName]);
+	const fallback = normalizeModelRouteConfig(
+		loadedModels.defaultModel || loadedModels.defaultThinkingLevel
+			? {
+					ref: loadedModels.defaultModel,
+					thinkingLevel: loadedModels.defaultThinkingLevel,
+				}
+			: undefined,
+	);
+
+	return {
+		provider: profile.provider ?? routed.provider ?? fallback.provider,
+		model: profile.model ?? routed.model ?? fallback.model,
+		thinkingLevel: profile.thinkingLevel ?? routed.thinkingLevel ?? fallback.thinkingLevel,
+	};
+}
+
+function formatModelRoute(route: ModelRoute): string | undefined {
+	if (!route.provider || !route.model) return undefined;
+	return `${route.provider}/${route.model}`;
+}
+
+function resolveEffectiveThinkingLevel(route: ModelRoute, effortMode: EffortMode): ThinkingLevel | undefined {
+	if (effortMode !== "auto") return effortMode;
+	return route.thinkingLevel;
 }
 
 function matchesRule(rule: GuardrailRule, command: string): boolean {
@@ -411,6 +553,76 @@ function suggestProfile(loadedProfiles: LoadedProfiles, input: string): string |
 	return undefined;
 }
 
+function parseGitStatusPath(line: string): string | undefined {
+	if (line.length < 4) return undefined;
+	const payload = line.slice(3).trim();
+	if (!payload) return undefined;
+	const renamedPath = payload.includes(" -> ") ? payload.split(" -> ").pop() : payload;
+	return renamedPath?.trim() || undefined;
+}
+
+function getChangedFiles(cwd: string): string[] {
+	const result = spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], {
+		cwd,
+		encoding: "utf-8",
+	});
+
+	if (result.status !== 0 || !result.stdout) return [];
+
+	const files = result.stdout
+		.split(/\r?\n/)
+		.map((line) => parseGitStatusPath(line))
+		.filter((path): path is string => Boolean(path));
+
+	return [...new Set(files)];
+}
+
+function inferVerificationContext(cwd: string, plan: PlanDocument | undefined): VerificationContext {
+	const changedFiles = getChangedFiles(cwd);
+	const planText = plan?.body ?? "";
+	const combinedText = `${planText}\n${changedFiles.join("\n")}`;
+
+	const scores: Record<VerificationPrimary, number> = {
+		frontend: 0,
+		backend: 0,
+		cli: 0,
+		config: 0,
+		general: 0,
+	};
+
+	for (const file of changedFiles) {
+		if (FRONTEND_FILE_PATTERN.test(file) || FRONTEND_PATH_PATTERN.test(file)) scores.frontend += 2;
+		if (BACKEND_FILE_PATTERN.test(file) || BACKEND_PATH_PATTERN.test(file)) scores.backend += 2;
+		if (CLI_FILE_PATTERN.test(file) || CLI_PATH_PATTERN.test(file)) scores.cli += 2;
+		if (CONFIG_FILE_PATTERN.test(file)) scores.config += 2;
+	}
+
+	if (FRONTEND_TEXT_PATTERN.test(combinedText)) scores.frontend += 1;
+	if (BACKEND_TEXT_PATTERN.test(combinedText)) scores.backend += 1;
+	if (CLI_TEXT_PATTERN.test(combinedText)) scores.cli += 1;
+	if (CONFIG_TEXT_PATTERN.test(combinedText)) scores.config += 1;
+
+	const primary = (["frontend", "backend", "cli", "config"] as VerificationPrimary[]).reduce<VerificationPrimary>(
+		(best, current) => (scores[current] > scores[best] ? current : best),
+		"general",
+	);
+
+	const modifiers: VerificationModifier[] = [];
+	if (REFACTOR_TEXT_PATTERN.test(combinedText)) modifiers.push("refactor");
+	if (BUG_FIX_TEXT_PATTERN.test(combinedText)) modifiers.push("bug-fix");
+
+	return {
+		primary: scores[primary] > 0 ? primary : "general",
+		modifiers,
+		changedFiles: changedFiles.slice(0, 12),
+	};
+}
+
+function formatVerificationLabel(context: VerificationContext): string {
+	const suffix = context.modifiers.length > 0 ? `+${context.modifiers.join("+")}` : "";
+	return `${context.primary}${suffix}`;
+}
+
 function buildPermissionModeSection(mode: PermissionMode): string {
 	if (mode === "read-only") {
 		return [
@@ -437,16 +649,138 @@ function buildPermissionModeSection(mode: PermissionMode): string {
 	].join("\n");
 }
 
+function buildModelSection(route: ModelRoute, effortMode: EffortMode, currentThinkingLevel: ThinkingLevel): string[] {
+	const lines = ["## Model Routing"];
+	const routeLabel = formatModelRoute(route);
+
+	lines.push(routeLabel ? `Active route: ${routeLabel}` : "Active route: current Pi model");
+
+	if (effortMode === "auto") {
+		lines.push(`Reasoning effort: auto (effective: ${currentThinkingLevel})`);
+	} else {
+		lines.push(`Reasoning effort override: ${effortMode} (effective: ${currentThinkingLevel})`);
+	}
+
+	return lines;
+}
+
+function buildVerificationSection(context: VerificationContext): string {
+	const lines = [
+		"Verification workflow:",
+		"- This is an executable validation pass. Prefer running commands over pure reasoning.",
+		"- Run at least one happy-path validation command when the environment allows.",
+		"- Run at least one non-happy-path probe when the environment allows.",
+		"- Use executed command output as evidence.",
+		"- End with exactly one verdict line: `VERDICT: PASS`, `VERDICT: FAIL`, or `VERDICT: PARTIAL`.",
+		"- If environment limits block useful checks, explain the limit and use `VERDICT: PARTIAL`.",
+		"",
+		`Detected verification focus: ${formatVerificationLabel(context)}`,
+	];
+
+	if (context.changedFiles.length > 0) {
+		lines.push("", "Changed files detected:");
+		for (const file of context.changedFiles) {
+			lines.push(`- ${file}`);
+		}
+	}
+
+	switch (context.primary) {
+		case "frontend":
+			lines.push(
+				"",
+				"Frontend checks:",
+				"- Run the most relevant UI build, lint, or test command if available",
+				"- Probe a non-happy-path UI state such as invalid input, empty state, error state, or narrow viewport",
+				"- Look for visible regressions, accessibility issues, and loading-state problems",
+			);
+			break;
+		case "backend":
+			lines.push(
+				"",
+				"Backend checks:",
+				"- Run the most relevant service, unit, or integration test command if available",
+				"- Probe a non-happy-path case such as malformed input, missing resource, auth failure, or boundary values",
+				"- Call out API, data, and error-handling regressions explicitly",
+			);
+			break;
+		case "cli":
+			lines.push(
+				"",
+				"CLI checks:",
+				"- Run the normal invocation path plus help or usage output when relevant",
+				"- Probe a non-happy-path case such as bad flags, missing args, invalid files, or non-zero exit behavior",
+				"- Report command output and exit-code behavior clearly",
+			);
+			break;
+		case "config":
+			lines.push(
+				"",
+				"Config checks:",
+				"- Run parse, lint, build, or dry-run validation if the project exposes one",
+				"- Probe a non-happy-path case such as invalid values, missing keys, or startup failures",
+				"- Focus on syntax validity, safe defaults, and boot-time regressions",
+			);
+			break;
+		default:
+			lines.push(
+				"",
+				"General checks:",
+				"- Choose the most relevant project command to validate behavior",
+				"- Add at least one adversarial or edge-case probe when possible",
+				"- Be explicit about what remains unverified",
+			);
+			break;
+	}
+
+	if (context.modifiers.includes("bug-fix")) {
+		lines.push(
+			"",
+			"Bug-fix checks:",
+			"- Try to reproduce the original bug first when the environment allows it",
+			"- After the fix passes, probe one adjacent edge case to look for partial regressions",
+		);
+	}
+
+	if (context.modifiers.includes("refactor")) {
+		lines.push(
+			"",
+			"Refactor checks:",
+			"- Focus on regression detection and unchanged external behavior",
+			"- Compare public interfaces, command output, or test behavior rather than only code shape",
+		);
+	}
+
+	lines.push(
+		"",
+		"Required output format:",
+		"## Evidence",
+		"- `command` -> observed result",
+		"## Findings",
+		"- ...",
+		"## Limits",
+		"- ...",
+		"VERDICT: PASS|FAIL|PARTIAL",
+	);
+
+	return lines.join("\n");
+}
+
 function buildWorkflowSection(
 	cwd: string,
 	profileName: string,
 	profile: ProfileDefinition,
 	mode: PermissionMode,
 	plan: PlanDocument | undefined,
+	route: ModelRoute,
+	effortMode: EffortMode,
+	currentThinkingLevel: ThinkingLevel,
+	verificationContext: VerificationContext | undefined,
 ): string {
 	const lines = [
 		"## Pi Workflow",
 		`Active persona: ${profileName}`,
+		...buildModelSection(route, effortMode, currentThinkingLevel),
+		"",
 		buildPermissionModeSection(mode),
 		"",
 		profile.instructions.trim(),
@@ -493,6 +827,10 @@ function buildWorkflowSection(
 		);
 	}
 
+	if (profileName === "verifier" && verificationContext) {
+		lines.push("", buildVerificationSection(verificationContext));
+	}
+
 	if (plan && profileName !== "builder") {
 		lines.push("", `Current plan status: ${plan.status} at \`${getRelativePlanPath(cwd)}\`.`);
 	}
@@ -502,6 +840,7 @@ function buildWorkflowSection(
 		"Workflow commands:",
 		"- `/persona` to switch persona",
 		"- `/plan` to inspect, edit, or approve the active plan",
+		"- `/effort` to inspect or override reasoning effort",
 	);
 
 	return lines.join("\n");
@@ -523,13 +862,58 @@ function renderPlanSummary(cwd: string, plan: PlanDocument): string {
 		.join("\n");
 }
 
+function getLatestCustomEntryData<T>(ctx: ExtensionContext, customType: string): T | undefined {
+	const entry = ctx.sessionManager
+		.getEntries()
+		.filter((item: { type: string; customType?: string }) => item.type === "custom" && item.customType === customType)
+		.pop() as { data?: T } | undefined;
+
+	return entry?.data;
+}
+
 export default function personaExtension(pi: ExtensionAPI): void {
 	let loadedProfiles: LoadedProfiles = {
 		defaultProfile: DEFAULT_PROFILE,
 		profiles: {},
 	};
 	let loadedGuardrails: GuardrailsFile = {};
+	let loadedModels: LoadedModels = {
+		routing: {},
+	};
 	let activeProfileName = DEFAULT_PROFILE;
+	let effortMode: EffortMode = "auto";
+	let verifierCommandsThisTurn: string[] = [];
+
+	function getCurrentProfile(): ProfileDefinition | undefined {
+		return getProfile(loadedProfiles, activeProfileName);
+	}
+
+	async function applyModelAndThinking(
+		profileName: string,
+		profile: ProfileDefinition,
+		ctx: ExtensionContext,
+	): Promise<ModelRoute> {
+		const route = resolveModelRoute(profileName, profile, loadedModels);
+
+		if (route.provider && route.model) {
+			const model = ctx.modelRegistry.find(route.provider, route.model);
+			if (model) {
+				const success = await pi.setModel(model);
+				if (!success) {
+					ctx.ui.notify(`No credentials available for ${route.provider}/${route.model}`, "warning");
+				}
+			} else {
+				ctx.ui.notify(`Model ${route.provider}/${route.model} not found`, "warning");
+			}
+		}
+
+		const thinkingLevel = resolveEffectiveThinkingLevel(route, effortMode);
+		if (thinkingLevel) {
+			pi.setThinkingLevel(thinkingLevel);
+		}
+
+		return route;
+	}
 
 	async function applyProfile(
 		profileName: string,
@@ -544,18 +928,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		const plan = readPlan(ctx.cwd);
 		const allToolNames = pi.getAllTools().map((tool) => tool.name);
 		pi.setActiveTools(getAllowedTools(profileName, profile, plan, allToolNames));
-
-		if (profile.provider && profile.model) {
-			const model = ctx.modelRegistry.find(profile.provider, profile.model);
-			if (model) {
-				const success = await pi.setModel(model);
-				if (!success) {
-					ctx.ui.notify(`No credentials available for ${profile.provider}/${profile.model}`, "warning");
-				}
-			} else {
-				ctx.ui.notify(`Model ${profile.provider}/${profile.model} not found`, "warning");
-			}
-		}
+		const route = await applyModelAndThinking(profileName, profile, ctx);
 
 		updateStatus(ctx);
 
@@ -565,7 +938,13 @@ export default function personaExtension(pi: ExtensionAPI): void {
 
 		if (options?.notify) {
 			const effectiveMode = getEffectivePermissionMode(profileName, profile, plan);
-			ctx.ui.notify(`Persona: ${profileName} (${effectiveMode})`, "info");
+			const routeLabel = formatModelRoute(route);
+			const currentThinkingLevel = pi.getThinkingLevel();
+			const routeMessage = routeLabel ? `, ${routeLabel}` : "";
+			ctx.ui.notify(
+				`Persona: ${profileName} (${effectiveMode}${routeMessage}, effort ${currentThinkingLevel})`,
+				"info",
+			);
 		}
 
 		if (
@@ -578,13 +957,50 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		return true;
 	}
 
+	async function setEffortMode(
+		nextMode: EffortMode,
+		ctx: ExtensionContext,
+		options?: { notify?: boolean; persist?: boolean },
+	): Promise<void> {
+		effortMode = nextMode;
+
+		const profile = getCurrentProfile();
+		if (profile) {
+			await applyModelAndThinking(activeProfileName, profile, ctx);
+		}
+
+		updateStatus(ctx);
+
+		if (options?.persist) {
+			pi.appendEntry(EFFORT_STATE_TYPE, { mode: nextMode });
+		}
+
+		if (options?.notify) {
+			const effectiveLevel = pi.getThinkingLevel();
+			const label = nextMode === "auto" ? `auto (effective: ${effectiveLevel})` : `${nextMode} (effective: ${effectiveLevel})`;
+			ctx.ui.notify(`Effort: ${label}`, "info");
+		}
+	}
+
 	function updateStatus(ctx: ExtensionContext): void {
-		const profile = getProfile(loadedProfiles, activeProfileName);
+		const profile = getCurrentProfile();
 		if (!profile) return;
 
 		const plan = readPlan(ctx.cwd);
 		const mode = getEffectivePermissionMode(activeProfileName, profile, plan);
+		const currentThinkingLevel = pi.getThinkingLevel();
 		ctx.ui.setStatus(PERSONA_STATUS_KEY, ctx.ui.theme.fg("accent", `${activeProfileName}:${mode}`));
+
+		const effortLabel =
+			effortMode === "auto" ? `effort:auto/${currentThinkingLevel}` : `effort:${currentThinkingLevel}`;
+		ctx.ui.setStatus(EFFORT_STATUS_KEY, ctx.ui.theme.fg("muted", effortLabel));
+
+		if (activeProfileName === "verifier") {
+			const verificationContext = inferVerificationContext(ctx.cwd, plan);
+			ctx.ui.setStatus(VERIFY_STATUS_KEY, ctx.ui.theme.fg("warning", `verify:${formatVerificationLabel(verificationContext)}`));
+		} else {
+			ctx.ui.setStatus(VERIFY_STATUS_KEY, undefined);
+		}
 
 		if (!plan) {
 			ctx.ui.setStatus(PLAN_STATUS_KEY, ctx.ui.theme.fg("dim", "plan:none"));
@@ -696,6 +1112,11 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		type: "string",
 	});
 
+	pi.registerFlag("effort", {
+		description: "Reasoning effort override (auto|off|minimal|low|medium|high|xhigh)",
+		type: "string",
+	});
+
 	pi.registerCommand("persona", {
 		description: "Switch persona profile",
 		getArgumentCompletions: (prefix) => getProfileArgumentCompletions(loadedProfiles, prefix),
@@ -730,25 +1151,52 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerCommand("effort", {
+		description: "Show or override reasoning effort",
+		getArgumentCompletions: (prefix) => getEffortArgumentCompletions(prefix),
+		handler: async (args, ctx) => {
+			const requested = args.trim().toLowerCase();
+			if (!requested) {
+				const effective = pi.getThinkingLevel();
+				const label = effortMode === "auto" ? `auto (effective: ${effective})` : `${effortMode} (effective: ${effective})`;
+				ctx.ui.notify(`Effort: ${label}`, "info");
+				return;
+			}
+
+			const normalized = normalizeEffortMode(requested);
+			if (!normalized) {
+				ctx.ui.notify(`Usage: /effort ${EFFORT_LEVELS.join("|")}`, "error");
+				return;
+			}
+
+			await setEffortMode(normalized, ctx, { notify: true, persist: true });
+		},
+	});
+
 	pi.on("session_start", async (_event, ctx) => {
 		loadedProfiles = loadProfiles(ctx.cwd);
 		loadedGuardrails = loadGuardrails(ctx.cwd);
+		loadedModels = loadModels(ctx.cwd);
 
 		const personaFlag = pi.getFlag("persona");
 		const flaggedProfile = typeof personaFlag === "string" ? personaFlag.trim() : "";
-		const storedProfile = ctx.sessionManager
-			.getEntries()
-			.filter((entry: { type: string; customType?: string }) => entry.type === "custom" && entry.customType === PROFILE_STATE_TYPE)
-			.pop() as { data?: { name?: string } } | undefined;
-
+		const storedProfile = getLatestCustomEntryData<{ name?: string }>(ctx, PROFILE_STATE_TYPE);
 		const initialProfile =
 			(flaggedProfile && getProfile(loadedProfiles, flaggedProfile) && flaggedProfile) ||
-			(storedProfile?.data?.name && getProfile(loadedProfiles, storedProfile.data.name) && storedProfile.data.name) ||
+			(storedProfile?.name && getProfile(loadedProfiles, storedProfile.name) && storedProfile.name) ||
 			loadedProfiles.defaultProfile;
 
 		if (flaggedProfile && !getProfile(loadedProfiles, flaggedProfile)) {
 			ctx.ui.notify(`Unknown persona "${flaggedProfile}", using ${loadedProfiles.defaultProfile}`, "warning");
 		}
+
+		const effortFlag = pi.getFlag("effort");
+		const flaggedEffort = typeof effortFlag === "string" ? normalizeEffortMode(effortFlag.trim()) : undefined;
+		const storedEffort = normalizeEffortMode(getLatestCustomEntryData<{ mode?: string }>(ctx, EFFORT_STATE_TYPE)?.mode);
+		if (typeof effortFlag === "string" && !flaggedEffort) {
+			ctx.ui.notify(`Unknown effort "${effortFlag}", using ${storedEffort ?? "auto"}`, "warning");
+		}
+		effortMode = flaggedEffort ?? storedEffort ?? "auto";
 
 		await applyProfile(initialProfile, ctx);
 	});
@@ -779,7 +1227,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		const profile = getProfile(loadedProfiles, activeProfileName);
+		const profile = getCurrentProfile();
 		if (!profile) return;
 
 		const plan = readPlan(ctx.cwd);
@@ -813,7 +1261,12 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		}
 
 		const confirmRule = getGuardrailMatch(loadedGuardrails.confirm, command);
-		if (!confirmRule) return;
+		if (!confirmRule) {
+			if (activeProfileName === "verifier" && typeof command === "string") {
+				verifierCommandsThisTurn.push(command);
+			}
+			return;
+		}
 
 		if (!ctx.hasUI) {
 			return {
@@ -829,14 +1282,26 @@ export default function personaExtension(pi: ExtensionAPI): void {
 				reason: `Command cancelled by user.\n${command}`,
 			};
 		}
+
+		if (activeProfileName === "verifier" && typeof command === "string") {
+			verifierCommandsThisTurn.push(command);
+		}
+		return;
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
-		const profile = getProfile(loadedProfiles, activeProfileName);
+		const profile = getCurrentProfile();
 		if (!profile) return;
 
 		const plan = readPlan(ctx.cwd);
 		const allToolNames = pi.getAllTools().map((tool) => tool.name);
+		const route = resolveModelRoute(activeProfileName, profile, loadedModels);
+		const verificationContext = activeProfileName === "verifier" ? inferVerificationContext(ctx.cwd, plan) : undefined;
+
+		if (activeProfileName === "verifier") {
+			verifierCommandsThisTurn = [];
+		}
+
 		pi.setActiveTools(getAllowedTools(activeProfileName, profile, plan, allToolNames));
 		updateStatus(ctx);
 
@@ -847,32 +1312,52 @@ export default function personaExtension(pi: ExtensionAPI): void {
 				profile,
 				getEffectivePermissionMode(activeProfileName, profile, plan),
 				plan,
+				route,
+				effortMode,
+				pi.getThinkingLevel(),
+				verificationContext,
 			)}`,
 		};
 	});
 
 	pi.on("turn_start", async () => {
-		if (getProfile(loadedProfiles, activeProfileName)) {
+		if (getCurrentProfile()) {
 			pi.appendEntry(PROFILE_STATE_TYPE, { name: activeProfileName });
 		}
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
-		if (activeProfileName !== "planner") return;
+		if (activeProfileName === "planner") {
+			const lastAssistantMessage = [...event.messages].reverse().find(isAssistantMessage);
+			if (!lastAssistantMessage) return;
+
+			const body = getAssistantText(lastAssistantMessage);
+			if (!body) return;
+
+			writePlan(ctx.cwd, {
+				status: "draft",
+				updatedAt: new Date().toISOString(),
+				sourceProfile: "planner",
+				body,
+			});
+			updateStatus(ctx);
+			ctx.ui.notify(`Draft plan saved to ${getRelativePlanPath(ctx.cwd)}`, "info");
+			return;
+		}
+
+		if (activeProfileName !== "verifier") return;
 
 		const lastAssistantMessage = [...event.messages].reverse().find(isAssistantMessage);
-		if (!lastAssistantMessage) return;
+		const body = lastAssistantMessage ? getAssistantText(lastAssistantMessage) : "";
 
-		const body = getAssistantText(lastAssistantMessage);
-		if (!body) return;
+		if (verifierCommandsThisTurn.length === 0) {
+			ctx.ui.notify("Verifier finished without running executable checks.", "warning");
+		}
 
-		writePlan(ctx.cwd, {
-			status: "draft",
-			updatedAt: new Date().toISOString(),
-			sourceProfile: "planner",
-			body,
-		});
+		if (body && !/\bVERDICT:\s*(PASS|FAIL|PARTIAL)\b/i.test(body)) {
+			ctx.ui.notify("Verifier response did not include a VERDICT line.", "warning");
+		}
+
 		updateStatus(ctx);
-		ctx.ui.notify(`Draft plan saved to ${getRelativePlanPath(ctx.cwd)}`, "info");
 	});
 }
