@@ -36,14 +36,20 @@
 - change-type-aware verification templates for frontend, backend, CLI, config, refactor, and bug-fix work
 - auto persona switching with confirmation
 - deeper project detection for nested roots and monorepos
+- macOS-aware shell guidance for BSD utility differences
 - prompt-section caching with `/context refresh`
 - manual context compaction with workflow-preserving instructions via `/context compact`
 - large bash-output persistence into Pi session artifacts with inline previews
 - project memory at `.pi/memory/project-memory.md`, with per-session opt-out
-- optional worktree-routed execution for risky edits and verification
+- optional worktree-routed execution for risky edits and verification, stored under the host system temp directory
 - verifier focus and workflow prompts stay aligned with the active worktree
 - project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
 - workflow enforcement through Pi extensions
+
+## macOS Notes
+- Worktree staging uses the host temp directory instead of assuming `/tmp`.
+- Pi now nudges the agent toward BSD/macOS-compatible shell flags when running on Darwin.
+- Read-only personas allow safe macOS inspection commands such as `sw_vers`, `mdfind`, `mdls`, `plutil`, and read-only `brew` queries.
 
 ## Recommended
 C++:

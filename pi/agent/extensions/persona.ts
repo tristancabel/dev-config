@@ -151,6 +151,7 @@ const READ_ONLY_SAFE_PATTERNS = [
 	/^\s*git\s+(status|log|diff|show|branch|remote|config\s+--get|ls-files)\b/i,
 	/^\s*npm\s+(list|ls|view|info|search|outdated|audit)\b/i,
 	/^\s*yarn\s+(list|info|why|audit)\b/i,
+	/^\s*brew\s+(list|info|search|outdated|config|doctor)\b/i,
 	/^\s*node\s+--version\b/i,
 	/^\s*python(?:3)?\s+--version\b/i,
 	/^\s*curl\b/i,
@@ -162,6 +163,12 @@ const READ_ONLY_SAFE_PATTERNS = [
 	/^\s*fd\b/i,
 	/^\s*bat\b/i,
 	/^\s*exa\b/i,
+	/^\s*sw_vers\b/i,
+	/^\s*mdfind\b/i,
+	/^\s*mdls\b/i,
+	/^\s*plutil\b/i,
+	/^\s*xcodebuild\s+(-version|-showsdks)\b/i,
+	/^\s*xcrun\b/i,
 ];
 
 const REVIEW_RUNNER_BLOCKED_PATTERNS = [
@@ -199,6 +206,11 @@ const REVIEW_RUNNER_BLOCKED_PATTERNS = [
 	/\bshutdown\b/i,
 	/\bsystemctl\s+(start|stop|restart|enable|disable)\b/i,
 	/\bservice\s+\S+\s+(start|stop|restart)\b/i,
+	/^\s*open\b/i,
+	/^\s*osascript\b/i,
+	/\blaunchctl\b/i,
+	/\bsoftwareupdate\b/i,
+	/\bdiskutil\b/i,
 	/\b(vim?|nano|emacs|code|subl)\b/i,
 ];
 

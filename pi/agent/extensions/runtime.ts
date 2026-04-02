@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
+import { platform, tmpdir } from "node:os";
 import { basename, join, relative } from "node:path";
 import {
 	createBashTool,
@@ -64,6 +65,7 @@ const LARGE_OUTPUT_PREVIEW_LINES = 160;
 const LARGE_OUTPUT_PREVIEW_BYTES = 12 * 1024;
 const MEMORY_PROMPT_MAX_LINES = 120;
 const MEMORY_PROMPT_MAX_BYTES = 8 * 1024;
+const HOST_PLATFORM = platform();
 const MEMORY_TEMPLATE = [
 	"# Project Memory",
 	"",
@@ -138,8 +140,35 @@ function hashText(text: string): string {
 	return createHash("sha1").update(text).digest("hex");
 }
 
+function canonicalizeExistingPath(path: string): string {
+	try {
+		return realpathSync(path);
+	} catch {
+		return path;
+	}
+}
+
+function getHostPlatformLabel(): string {
+	if (HOST_PLATFORM === "darwin") return "macOS";
+	if (HOST_PLATFORM === "win32") return "Windows";
+	return "Linux/Unix";
+}
+
 function getSensitiveMemoryLabels(text: string): string[] {
 	return SENSITIVE_MEMORY_PATTERNS.filter((entry) => entry.pattern.test(text)).map((entry) => entry.label);
+}
+
+function buildPlatformPromptSection(): string {
+	if (HOST_PLATFORM !== "darwin") return "";
+
+	return [
+		"## Host Platform",
+		"- Host OS: macOS (Darwin)",
+		"- Prefer POSIX- and BSD-compatible shell flags over GNU-only variants",
+		"- `sed -i`, `stat`, `du`, `df`, and `readlink` behave differently than on Linux",
+		"- Prefer Pi's read/edit/write tools for file changes instead of shell mutation one-liners",
+		"- macOS-safe inspection commands such as `sw_vers`, `mdfind`, `mdls`, `plutil`, and read-only `brew info|list|search` commands may be available",
+	].join("\n");
 }
 
 function buildMemoryPromptSection(cwd: string, memoryEnabled: boolean): string {
@@ -238,7 +267,7 @@ function buildCompactionInstructions(cwd: string, memoryEnabled: boolean, worktr
 function getManagedWorktreeBase(repoRoot: string): string {
 	const repoName = basename(repoRoot).replace(/[^a-zA-Z0-9._-]+/g, "-") || "repo";
 	const repoHash = hashText(repoRoot).slice(0, 8);
-	return join("/tmp", "pi-worktrees", `${repoName}-${repoHash}`);
+	return join(canonicalizeExistingPath(tmpdir()), "pi-worktrees", `${repoName}-${repoHash}`);
 }
 
 function findGitRepoRoot(cwd: string): string | undefined {
@@ -249,7 +278,7 @@ function findGitRepoRoot(cwd: string): string | undefined {
 
 	if (result.status !== 0) return undefined;
 	const root = result.stdout.trim();
-	return root.length > 0 ? root : undefined;
+	return root.length > 0 ? canonicalizeExistingPath(root) : undefined;
 }
 
 function parseGitWorktreeList(output: string): GitWorktreeRecord[] {
@@ -293,6 +322,10 @@ function listManagedWorktrees(repoRoot: string): ManagedWorktree[] {
 
 	const basePath = getManagedWorktreeBase(repoRoot);
 	return parseGitWorktreeList(result.stdout)
+		.map((entry) => ({
+			...entry,
+			path: canonicalizeExistingPath(entry.path),
+		}))
 		.filter((entry) => entry.path.startsWith(`${basePath}/`) || entry.path === basePath)
 		.map((entry) => ({
 			name: basename(entry.path),
@@ -312,7 +345,7 @@ function validateWorktreeName(name: string): string | undefined {
 }
 
 function resolveExecutionPath(repoRoot: string, currentCwd: string, worktreeRoot: string): string {
-	const relativePath = relative(repoRoot, currentCwd);
+	const relativePath = relative(canonicalizeExistingPath(repoRoot), canonicalizeExistingPath(currentCwd));
 	if (!relativePath || relativePath === ".") return worktreeRoot;
 	const candidate = join(worktreeRoot, relativePath);
 	return existsSync(candidate) ? candidate : worktreeRoot;
@@ -333,11 +366,12 @@ function createOrReuseManagedWorktree(repoRoot: string, currentCwd: string, name
 	mkdirSync(baseDir, { recursive: true });
 
 	if (existsSync(targetRoot)) {
+		const normalizedTargetRoot = canonicalizeExistingPath(targetRoot);
 		return {
 			created: false,
-			rootPath: targetRoot,
-			path: resolveExecutionPath(repoRoot, currentCwd, targetRoot),
-			error: `Path already exists but is not registered as a git worktree: ${targetRoot}`,
+			rootPath: normalizedTargetRoot,
+			path: resolveExecutionPath(repoRoot, currentCwd, normalizedTargetRoot),
+			error: `Path already exists but is not registered as a git worktree: ${normalizedTargetRoot}`,
 		};
 	}
 
@@ -347,18 +381,19 @@ function createOrReuseManagedWorktree(repoRoot: string, currentCwd: string, name
 	});
 
 	if (result.status !== 0) {
+		const normalizedTargetRoot = canonicalizeExistingPath(targetRoot);
 		return {
 			created: false,
-			rootPath: targetRoot,
-			path: resolveExecutionPath(repoRoot, currentCwd, targetRoot),
+			rootPath: normalizedTargetRoot,
+			path: resolveExecutionPath(repoRoot, currentCwd, normalizedTargetRoot),
 			error: (result.stderr || result.stdout || "git worktree add failed").trim(),
 		};
 	}
 
 	return {
 		created: true,
-		rootPath: targetRoot,
-		path: resolveExecutionPath(repoRoot, currentCwd, targetRoot),
+		rootPath: canonicalizeExistingPath(targetRoot),
+		path: resolveExecutionPath(repoRoot, currentCwd, canonicalizeExistingPath(targetRoot)),
 	};
 }
 
@@ -507,7 +542,7 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 				? `${worktreeState.name ?? "active"} at ${getRelativeDisplayPath(ctx.cwd, worktreeState.path)}`
 				: "off";
 		ctx.ui.notify(
-			`Context: ${usageLabel} | Prompt cache sections: ${sectionCache.size()} | Memory: ${memoryEnabled ? "on" : "off"} | Worktree: ${worktreeLabel} | Large-output threshold: ${formatSize(LARGE_OUTPUT_THRESHOLD_BYTES)}`,
+			`Context: ${usageLabel} | Host: ${getHostPlatformLabel()} | Prompt cache sections: ${sectionCache.size()} | Memory: ${memoryEnabled ? "on" : "off"} | Worktree: ${worktreeLabel} | Large-output threshold: ${formatSize(LARGE_OUTPUT_THRESHOLD_BYTES)}`,
 			"info",
 		);
 	}
@@ -914,7 +949,9 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		updateStatus(ctx);
 		maybeWarnAboutSensitiveMemory(ctx);
 
-		const sections = [getWorktreePromptSection(ctx), getMemoryPromptSection(ctx)].filter((section) => section.trim().length > 0);
+		const sections = [buildPlatformPromptSection(), getWorktreePromptSection(ctx), getMemoryPromptSection(ctx)].filter(
+			(section) => section.trim().length > 0,
+		);
 		if (sections.length === 0) return;
 
 		return {
