@@ -1,22 +1,33 @@
 # Pi Advanced Setup
 
 ## Personas
-- scout → explore
-- planner → design
-- builder → implement
-- reviewer → audit
+- scout → read-only exploration
+- planner → read-only planning
+- builder → implementation, gated by approved plan
+- reviewer → read-only audit and validation
 
 ## Commands
 - /persona
-- /lang python on|off
-- /lang cpp on|off
+- /plan
+- /plan status
+- /plan show
+- /plan approve
+- /plan draft
+- /plan edit
+- /plan path
+- /lang python on|off|auto
+- /lang cpp on|off|auto
 
 ## Features
-- auto language detection
-- pixi enforcement (if pixi.toml)
-- clangd-aware C++
-- libcst-aware Python
-- workflow enforcement
+- declarative persona profiles
+- role-aware permission modes
+- hard read-only isolation for scout and planner
+- persistent project plan at `.pi/plans/active-plan.md`
+- explicit builder approval gate
+- auto persona switching with confirmation
+- recursive language and manifest detection
+- project-local overrides via `.pi/profiles.json` and `.pi/guardrails.json`
+- workflow enforcement through Pi extensions
 
 ## Recommended
 C++:
