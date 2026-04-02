@@ -23,6 +23,12 @@
 - /lang refresh
 - /lang python on|off|auto
 - /lang cpp on|off|auto
+- /swarm agents [global|project|both]
+- /swarm status
+- /swarm runs
+- /swarm inspect [run-id]
+- /swarm abort [run-id]
+- /swarm run [--scope global|project|both] [--cwd path] [--trust-project] <agent> -- <task>
 
 ## Features
 - declarative persona profiles
@@ -44,6 +50,11 @@
 - optional worktree-routed execution for risky edits and verification, stored under the host system temp directory
 - verifier focus and workflow prompts stay aligned with the active worktree
 - project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
+- declarative swarm agent catalog via `agent/swarm-agents.json` plus project-local `.pi/swarm-agents.json`
+- single-worker swarm delegation tool with persisted run records under the Pi session directory
+- live swarm footer and widget updates that work in interactive and RPC clients via `setStatus` and `setWidget`
+- rich swarm tool rendering with run IDs, worker activity, output, usage, and run-record paths
+- project-local swarm-agent trust gating and delegation safety checks against the current persona permission mode
 - workflow enforcement through Pi extensions
 
 ## macOS Notes

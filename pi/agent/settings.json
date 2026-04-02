@@ -7,5 +7,6 @@
     "npm:pi-agentic-compaction",
     "npm:pi-peon-ping",
     "npm:@aliou/pi-guardrails"
-  ]
+  ],
+  "lastChangelogVersion": "0.62.0"
 }
