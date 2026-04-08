@@ -382,6 +382,18 @@
 ;; ;; ;;;;;;;;;;;;;;;;;;;
 ;;(remove-hook 'flymake-diagnostic-functions 'flymake-proc-legacy-flymake)
 ;;(setq flymake-start-on-flymake-mode nil)
+(defun my/disable-cc-flymake-backend ()
+  "Disable cc-mode's compiler Flymake backend in C and C++ buffers.
+
+Eglot supplies diagnostics through `eglot-flymake-backend'.  Removing the
+default `flymake-cc' backend early avoids stale compiler processes reporting
+after Eglot has taken over Flymake for the buffer."
+  (remove-hook 'flymake-diagnostic-functions #'flymake-cc t))
+
+(add-hook 'c-mode-common-hook #'my/disable-cc-flymake-backend)
+(add-hook 'c-ts-mode-hook #'my/disable-cc-flymake-backend)
+(add-hook 'c++-ts-mode-hook #'my/disable-cc-flymake-backend)
+
 (use-package flymake
   :ensure t
   :defer t)
@@ -406,57 +418,6 @@
 ;; language servers / eglot
 ;; ;;;;;;;;;;;;;;;;;;;;;;;
 
-(defvar my/ccls-executable-candidates
-  '("ccls"
-    "~/Tools/ccls/Release/ccls"
-    "~/Tools/ccls/Release/bin/ccls"
-    "~/Tools/ccls/build/Release/ccls")
-  "Candidate locations for the ccls executable.")
-
-(defvar my/clangd-executable-candidates
-  '("clangd"
-    "clangd-18"
-    "clangd-17"
-    "clangd-16"
-    "clangd-15"
-    "clangd-14"
-    "clangd-13")
-  "Candidate executable names for clangd.")
-
-(defun my/find-executable (candidates)
-  "Return the first executable found in CANDIDATES."
-  (catch 'match
-    (dolist (candidate candidates)
-      (let ((path (cond
-                   ((file-name-absolute-p candidate)
-                    (and (file-executable-p candidate) candidate))
-                   ((string-prefix-p "~/" candidate)
-                    (let ((expanded (expand-file-name candidate)))
-                      (and (file-executable-p expanded) expanded)))
-                   (t
-                    (executable-find candidate)))))
-        (when path
-          (throw 'match path))))))
-
-(defun my/eglot-cpp-contact ()
-  "Return the preferred Eglot server command for C and C++."
-  (let ((ccls (my/find-executable my/ccls-executable-candidates)))
-    (if ccls
-        `(,ccls
-          :initializationOptions
-          (:index (:comments 2)
-           :completion (:detailedLabel t)))
-      (let ((clangd (or (my/find-executable my/clangd-executable-candidates)
-                        "clangd")))
-        `(,clangd
-          "--background-index"
-          "--clang-tidy"
-          "--completion-style=detailed"
-          "--cross-file-rename"
-          "--header-insertion=never"
-          "--malloc-trim"
-          "--pch-storage=memory")))))
-
 (use-package eglot
   :ensure nil
   :commands (eglot eglot-ensure)
@@ -473,6 +434,12 @@
               ("C-c l r" . eglot-rename)
               ("C-c l h" . eglot-help-at-point)
               ("C-c l a" . eglot-code-actions)
+              ("C-c l d" . xref-find-definitions)
+              ("C-c l i" . eglot-find-implementation)
+              ("C-c l D" . eglot-find-declaration)
+              ("C-c l t" . eglot-find-typeDefinition)
+              ("C-c l f" . xref-find-references)
+              ("C-c l b" . xref-go-back)
               ("M-n"     . flymake-goto-next-error)
               ("M-p"     . flymake-goto-prev-error))
   :init
@@ -483,7 +450,8 @@
   (eglot-extend-to-xref t)
   :config
   (add-to-list 'eglot-server-programs
-               '((c-mode c-ts-mode c++-mode c++-ts-mode) . my/eglot-cpp-contact))
+               '((c-mode c-ts-mode c++-mode c++-ts-mode)
+                 . ("ccls" "--init" "{\"compilationDatabaseDirectory\": \"build\"}")))
   ; Add server for web-mode
   ;(add-to-list 'eglot-server-programs
   ;             '(web-mode . ("vscode-html-language-server" "--stdio")))
@@ -534,6 +502,7 @@
 (use-package eat
   :ensure t
   :commands (eat))
+(global-set-key (kbd "C-c e") #'eat)
 
 ;; neotree
 ;; ;;;;;;;;;;;;;;;;;;;;
