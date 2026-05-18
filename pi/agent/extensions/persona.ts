@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
@@ -95,7 +95,7 @@ const EFFORT_STATUS_KEY = "pi-effort";
 const VERIFY_STATUS_KEY = "pi-verify";
 const PLAN_DIRECTORY = join(".pi", "plans");
 const PLAN_FILE_NAME = "active-plan.md";
-const PLAN_COMMANDS = ["status", "show", "approve", "draft", "edit", "path"];
+const PLAN_COMMANDS = ["status", "show", "approve", "draft", "edit", "new", "remove", "path"];
 const EFFORT_LEVELS: EffortMode[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"];
 const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
 const DEFAULT_PERSONA_PRIORITY = ["verifier", "reviewer", "planner", "scout", "builder"];
@@ -419,6 +419,13 @@ function writePlan(cwd: string, plan: Omit<PlanDocument, "path">): PlanDocument 
 	};
 }
 
+function removePlan(cwd: string): boolean {
+	const path = getPlanPath(cwd);
+	if (!existsSync(path)) return false;
+	unlinkSync(path);
+	return true;
+}
+
 function buildEmptyPlanTemplate(): string {
 	return [
 		"## Plan",
@@ -433,6 +440,11 @@ function buildEmptyPlanTemplate(): string {
 		"## Validation",
 		"- ",
 	].join("\n");
+}
+
+function isEmptyPlanBody(body: string): boolean {
+	const trimmedBody = body.trim();
+	return trimmedBody.length === 0 || trimmedBody === buildEmptyPlanTemplate().trim();
 }
 
 function getProfileNames(loadedProfiles: LoadedProfiles): string[] {
@@ -835,7 +847,7 @@ function buildWorkflowSection(
 			if (plan) {
 				lines.push(`Current plan status: ${plan.status} at \`${getRelativePlanPath(cwd)}\`.`);
 			} else {
-				lines.push(`No plan file exists yet. Ask the user to switch to planner or run \`/plan edit\` to create one.`);
+				lines.push(`No plan file exists yet. Ask the user to switch to planner or run \`/plan new\` to create one.`);
 			}
 		} else {
 			lines.push(
@@ -869,7 +881,7 @@ function buildWorkflowSection(
 		"",
 		"Workflow commands:",
 		"- `/persona` to switch persona",
-		"- `/plan` to inspect, edit, or approve the active plan",
+		"- `/plan` to inspect, create, edit, approve, or remove the active plan",
 		"- `/effort` to inspect or override reasoning effort",
 	);
 
@@ -1059,16 +1071,17 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		const action = args.trim().toLowerCase() || "status";
 		const existingPlan = readPlan(ctx.cwd);
 
-		if (action === "status" || action === "path") {
+		if (action === "path") {
+			ctx.ui.notify(getRelativePlanPath(ctx.cwd), "info");
+			return;
+		}
+
+		if (action === "status") {
 			if (!existingPlan) {
 				ctx.ui.notify(`No active plan. Expected at ${getRelativePlanPath(ctx.cwd)}`, "info");
 				return;
 			}
-			const message =
-				action === "path"
-					? getRelativePlanPath(ctx.cwd)
-					: `Plan ${existingPlan.status} at ${getRelativePlanPath(ctx.cwd)}`;
-			ctx.ui.notify(message, "info");
+			ctx.ui.notify(`Plan ${existingPlan.status} at ${getRelativePlanPath(ctx.cwd)}`, "info");
 			return;
 		}
 
@@ -1125,6 +1138,41 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			return;
 		}
 
+		if (action === "remove") {
+			if (!removePlan(ctx.cwd)) {
+				ctx.ui.notify("No active plan to remove", "warning");
+				return;
+			}
+
+			await applyProfile(activeProfileName, ctx);
+			ctx.ui.notify(`Plan removed: ${getRelativePlanPath(ctx.cwd)}`, "info");
+			return;
+		}
+
+		if (action === "new") {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("Creating a new plan requires interactive mode", "error");
+				return;
+			}
+
+			const editedBody = await ctx.ui.editor("Create new active plan", buildEmptyPlanTemplate());
+			if (editedBody === undefined) return;
+			if (isEmptyPlanBody(editedBody)) {
+				ctx.ui.notify("Plan was not saved because it is empty", "warning");
+				return;
+			}
+
+			writePlan(ctx.cwd, {
+				status: "draft",
+				updatedAt: new Date().toISOString(),
+				sourceProfile: activeProfileName === "planner" ? "planner" : "manual",
+				body: editedBody.trim(),
+			});
+			await applyProfile(activeProfileName, ctx);
+			ctx.ui.notify(`New draft plan saved to ${getRelativePlanPath(ctx.cwd)}`, "info");
+			return;
+		}
+
 		if (action === "edit") {
 			if (!ctx.hasUI) {
 				ctx.ui.notify("Plan editing requires interactive mode", "error");
@@ -1134,17 +1182,25 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			const currentBody = existingPlan?.body ?? buildEmptyPlanTemplate();
 			const editedBody = await ctx.ui.editor("Edit active plan", currentBody);
 			if (editedBody === undefined) return;
+			if (isEmptyPlanBody(editedBody)) {
+				ctx.ui.notify("Plan was not saved because it is empty", "warning");
+				return;
+			}
 
-			const nextStatus = existingPlan?.status ?? "draft";
+			const wasApproved = existingPlan?.status === "approved";
 			writePlan(ctx.cwd, {
-				status: nextStatus,
+				status: "draft",
 				updatedAt: new Date().toISOString(),
-				approvedAt: nextStatus === "approved" ? existingPlan?.approvedAt : undefined,
 				sourceProfile: existingPlan?.sourceProfile ?? "planner",
 				body: editedBody.trim(),
 			});
 			await applyProfile(activeProfileName, ctx);
-			ctx.ui.notify(`Plan saved to ${getRelativePlanPath(ctx.cwd)}`, "info");
+			ctx.ui.notify(
+				wasApproved
+					? `Plan saved as draft and approval revoked: ${getRelativePlanPath(ctx.cwd)}`
+					: `Plan saved to ${getRelativePlanPath(ctx.cwd)}`,
+				"info",
+			);
 			return;
 		}
 
@@ -1188,7 +1244,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("plan", {
-		description: "Show, edit, or approve the active plan",
+		description: "Show, create, edit, approve, or remove the active plan",
 		getArgumentCompletions: (prefix) => getPlanArgumentCompletions(prefix),
 		handler: async (args, ctx) => {
 			await handlePlanCommand(args, ctx);

@@ -452,17 +452,37 @@ CONTINUE-LAST-SESSION controls whether Pi should resume the previous session."
   (concat (shell-quote-argument (executable-find "pi"))
           (when continue-last-session " -c")))
 
+(defun my/pi-agent--pop-to-bottom (buffer)
+  "Show BUFFER with point at the end of the terminal output."
+  (let ((window (pop-to-buffer buffer)))
+    (with-current-buffer buffer
+      (goto-char (point-max))
+      (when-let ((process (get-buffer-process buffer)))
+        (set-marker (process-mark process) (point-max))
+        (set-marker-insertion-type (process-mark process) t)))
+    (set-window-point window (with-current-buffer buffer (point-max)))))
+
+(defun my/pi-agent--enable-follow-output ()
+  "Keep the Pi terminal following new process output."
+  (setq-local term-scroll-to-bottom-on-output t)
+  (setq-local term-scroll-show-maximum-output t)
+  (when (boundp 'eat-scroll-to-bottom-on-output)
+    (setq-local eat-scroll-to-bottom-on-output t))
+  (when (boundp 'eat-scroll-to-bottom-on-input)
+    (setq-local eat-scroll-to-bottom-on-input t)))
+
 (defun my/pi-agent--start-in-eat (command)
   "Start Pi using Eat with COMMAND."
   (let ((current-prefix-arg '(4)))
     (call-interactively #'eat))
   (let ((buffer (current-buffer)))
     (rename-buffer "*pi*" t)
+    (my/pi-agent--enable-follow-output)
     (when (fboundp 'eat-char-mode)
       (eat-char-mode))
     (when-let ((process (get-buffer-process buffer)))
       (process-send-string process (concat command "\n")))
-    (pop-to-buffer buffer)))
+    (my/pi-agent--pop-to-bottom buffer)))
 
 (defun my/pi-agent--start-in-ansi-term (shell command)
   "Start Pi using `ansi-term' with SHELL and COMMAND."
@@ -470,9 +490,10 @@ CONTINUE-LAST-SESSION controls whether Pi should resume the previous session."
          (term-buffer (ansi-term shell "pi")))
     (with-current-buffer term-buffer
       (rename-buffer "*pi*" t)
+      (my/pi-agent--enable-follow-output)
       (term-char-mode)
       (term-send-raw-string (concat command "\n")))
-    (pop-to-buffer term-buffer)))
+    (my/pi-agent--pop-to-bottom term-buffer)))
 
 (defun my/pi-agent (&optional continue-last-session)
   "Launch Pi in a dedicated terminal buffer.
@@ -494,7 +515,7 @@ With prefix argument CONTINUE-LAST-SESSION, resume the last Pi session."
     (setq command (my/pi-agent--command continue-last-session))
     (let ((buffer (get-buffer buffer-name)))
       (if (and buffer (get-buffer-process buffer))
-          (pop-to-buffer buffer)
+          (my/pi-agent--pop-to-bottom buffer)
         (when buffer
           (kill-buffer buffer))
         (cond

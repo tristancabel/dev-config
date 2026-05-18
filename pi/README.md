@@ -15,6 +15,8 @@
 - /plan approve
 - /plan draft
 - /plan edit
+- /plan new
+- /plan remove
 - /plan path
 - /effort auto|off|minimal|low|medium|high|xhigh
 - /context status|refresh|compact
