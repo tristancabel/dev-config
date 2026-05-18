@@ -39,7 +39,7 @@
 ;; flycheck -> syntax checker
 ;; git-gutter -> to have + = on line changes by git
 ;; eglot -> built-in Language Server Protocol client
-;; ccls / clangd -> C and C++ language servers
+;; clangd -> C and C++ language server
 ;; pyright -> python language server
 ;; projectile -> project interaction library for Emacs.
 ;; helm -> Emacs incremental completion and selection narrowing framework

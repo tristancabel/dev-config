@@ -1,32 +1,19 @@
-This is my current emacs-config
+# Emacs Configuration
+
+This is my current emacs-config.
 
 # Dependencies
 
 The current LSP dependencies are:
 
 - `eglot` (built into Emacs 29)
-- `clangd` or `ccls` for C/C++
+- `clangd` for C/C++
 - `pyright` for Python
 
 ## C and C++
 
-This config prefers `ccls` when it is installed and falls back to
-`clangd` automatically otherwise.
-
 ### clangd
 `sudo apt-get install clangd`
-
-### ccls
-If your distro packages it, install it directly. Otherwise build it from source:
-
-```
-cd ~/Tools
-git clone --depth=1 --recursive https://github.com/MaskRay/ccls/
-cd ccls
-cmake -H. -BRelease -DCMAKE_BUILD_TYPE=Release
-cmake --build Release
-export PATH="$PATH:/home/trcabel/Tools/ccls/Release"
-```
 
 ## Python
 
@@ -36,7 +23,7 @@ export PATH="$PATH:/home/trcabel/Tools/ccls/Release"
 ## Pi Coding Agent
 
 Install Pi with:
-`npm install -g @mariozechner/pi-coding-agent`
+`npm install -g @earendil-works/pi-coding-agent`
 
 For proper terminal rendering inside Emacs, this config uses `eat`.
 
@@ -50,18 +37,9 @@ In Emacs:
 Project-specific instructions for Pi live in `AGENTS.md`.
 
 # Install
-To install this emacs config, create a symbolic link from `~.emacs.d` to this directory:
 
+To install this emacs config, create a symbolic link from `~/.emacs.d` to this directory:
+
+```bash
+ln -s /path/to/dev-config/emacs ~/.emacs.d
 ```
-cd ~
-ln -s ~/Tools/emacs-config .emacs.d
-```
-
-## [DEPRECATED] lsp-bridge
-
-1. install pip dependencies
- `pip3 install epc orjson sexpdata six`
-
-2. emacs dependencies **posframe**, **markdown-mode**, **yasnippet**,
-
-3. clone *https://github.com/manateelazycat/lsp-bridge*

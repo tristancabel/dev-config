@@ -1,7 +1,7 @@
 {
   "deny": [
     {
-      "command": "rm -rf /",
+      "command": "^rm -rf \\s+/",
       "message": "Nice try, but I like my root directory where it is."
     },
     {
@@ -15,16 +15,32 @@
     {
       "command": "^sudo.*",
       "message": "Sudo commands are disabled for safety. Use local environment tools."
+    },
+    {
+      "command": "^mkfs",
+      "message": "Filesystem formatting is not allowed."
+    },
+    {
+      "command": "^dd \\s+if=",
+      "message": "Raw disk writing with dd is not allowed."
+    },
+    {
+      "command": "^: \\s*> \\s*/dev/",
+      "message": "Redirecting to device files is not allowed."
     }
   ],
   "confirm": [
     {
-      "command": "rm -rf .*",
+      "command": "^rm -rf \\s+\\.",
       "message": "Are you sure you want to delete these files recursively?"
     },
     {
       "command": "pixi run python.*delete.*",
       "message": "The script appears to have deletion logic. Proceed?"
+    },
+    {
+      "command": "^curl.*\\|\\s*sh",
+      "message": "Piping a remote script directly to shell. Proceed?"
     }
   ]
 }

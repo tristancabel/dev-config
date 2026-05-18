@@ -242,31 +242,6 @@
 ;                                          (conda-env-activate-for-buffer))))
 
 
-;; flycheck
-;; syntax checker
-;; ;;;;;;;;;;;;;;;;;;;
-;; (use-package flycheck
-;;   :ensure t
-;;   :init
-;;   (global-flycheck-mode t)
-;;   :config
-;;   ;; Check only when saving or opening files. Newline & idle checks are a mote
-;;   ;; excessive and can catch code in an incomplete state, producing false
-;;   ;; positives, so we removed them.
-;;   (setq flycheck-check-syntax-automatically '(save mode-enabled idle-buffer-switch))
-;;
-;;   ;; For the above functionality, check syntax in a buffer that you switched to
-;;   ;; only briefly. This allows "refreshing" the syntax check state for several
-;;   ;; buffers quickly after e.g. changing a config file.
-;;   (setq flycheck-buffer-switch-check-intermediate-buffers t)
-;;
-;;   ;; Display errors a little quicker (default is 0.9s)
-;;   (setq flycheck-display-errors-delay 0.25)
-;;   :custom
-;;    (global-flycheck-modes
-;;     '(not text-mode outline-mode fundamental-mode org-mode
-;;           diff-mode shell-mode eshell-mode term-mode)))
-
 ;; company
 ;; Completion hooks
 ;; ;;;;;;;;;;;;;;;;;;;;
@@ -357,31 +332,8 @@
   :after (cmake-mode)
   :hook (cmake-mode . cmake-font-lock-activate))
 
-;; (use-package cmake-ide
-;;   :ensure t
-;;   :after projectile
-;;   :hook (c++-mode . my/cmake-ide-find-project)
-;;   :preface
-;;   (defun my/cmake-ide-find-project ()
-;;     "Finds the directory of the project for cmake-ide."
-;;     (with-eval-after-load 'projectile
-;;       (setq cmake-ide-project-dir (projectile-project-root))
-;;       (setq cmake-ide-build-dir (concat cmake-ide-project-dir "build")))
-;;     (setq cmake-ide-compile-command
-;;           (concat "cd " cmake-ide-build-dir " && cmake .. && make -j"))
-;;     (cmake-ide-load-db))
-
-;;   (defun my/switch-to-compilation-window ()
-;;     "Switches to the *compilation* buffer after compilation."
-;;     (other-window 1))
-;;   :bind ([remap comment-region] . cmake-ide-compile)
-;;   :init (cmake-ide-setup)
-;;   :config (advice-add 'cmake-ide-compile :after #'my/switch-to-compilation-window))
-
-;; ;; flymake
-;; ;; ;;;;;;;;;;;;;;;;;;;
-;;(remove-hook 'flymake-diagnostic-functions 'flymake-proc-legacy-flymake)
-;;(setq flymake-start-on-flymake-mode nil)
+;; flymake
+;; ;;;;;;;;;;;;;;;;;;;
 (use-package flymake
   :ensure t
   :defer t)
@@ -393,25 +345,8 @@
 (setq flymake-no-changes-timeout nil)
 (setq flymake-proc-compilation-prevents-echo t)
 
-;; Show flymake error on minibuffer when cursor is on a line with an error
-;(defun my/flymake-show-error ()
-;  (when (flymake-mode)
-;    (let ((line-no (line-number-at-pos)))
-;      (dolist (elem flymake-err-info)
-;        (when (eq line-no (car elem))
-;          (message "%s" (flymake-ler-text (cdr elem))))))))
-;(add-hook 'post-command-hook #'my/flymake-show-error)
-
-
 ;; language servers / eglot
 ;; ;;;;;;;;;;;;;;;;;;;;;;;
-
-(defvar my/ccls-executable-candidates
-  '("ccls"
-    "~/Tools/ccls/Release/ccls"
-    "~/Tools/ccls/Release/bin/ccls"
-    "~/Tools/ccls/build/Release/ccls")
-  "Candidate locations for the ccls executable.")
 
 (defvar my/clangd-executable-candidates
   '("clangd"
@@ -439,23 +374,17 @@
           (throw 'match path))))))
 
 (defun my/eglot-cpp-contact ()
-  "Return the preferred Eglot server command for C and C++."
-  (let ((ccls (my/find-executable my/ccls-executable-candidates)))
-    (if ccls
-        `(,ccls
-          :initializationOptions
-          (:index (:comments 2)
-           :completion (:detailedLabel t)))
-      (let ((clangd (or (my/find-executable my/clangd-executable-candidates)
-                        "clangd")))
-        `(,clangd
-          "--background-index"
-          "--clang-tidy"
-          "--completion-style=detailed"
-          "--cross-file-rename"
-          "--header-insertion=never"
-          "--malloc-trim"
-          "--pch-storage=memory")))))
+  "Return the Eglot server command for C and C++ (clangd)."
+  (let ((clangd (or (my/find-executable my/clangd-executable-candidates)
+                    "clangd")))
+    `(,clangd
+      "--background-index"
+      "--clang-tidy"
+      "--completion-style=detailed"
+      "--cross-file-rename"
+      "--header-insertion=never"
+      "--malloc-trim"
+      "--pch-storage=memory")))
 
 (use-package eglot
   :ensure nil
@@ -493,35 +422,6 @@
   ;;(add-to-list 'eglot-server-programs
   ;;             '(python-mode . ("jedi-language-server"))))
 )
-
-
-;;(defun eglot-ccls-inheritance-hierarchy (&optional derived)
-;;  "Show inheritance hierarchy for the thing at point.
-;;If DERIVED is non-nil (interactively, with prefix argument), show
-;;the children of class at point."
-;;  (interactive "P")
-;;  (if-let* ((res (jsonrpc-request
-;;                  (eglot--current-server-or-lose)
-;;                  :$ccls/inheritance
-;;                  (append (eglot--TextDocumentPositionParams)
-;;                          `(:derived ,(if derived t :json-false))
-;;                          '(:levels 100) '(:hierarchy t))))
-;;            (tree (list (cons 0 res))))
-;;      (with-help-window "*ccls inheritance*"
-;;        (with-current-buffer standard-output
-;;          (while tree
-;;            (pcase-let ((`(,depth . ,node) (pop tree)))
-;;              (cl-destructuring-bind (&key uri range) (plist-get node :location)
-;;                (insert (make-string depth ?\ ) (plist-get node :name) "\n")
-;;                (make-text-button (+ (point-at-bol 0) depth) (point-at-eol 0)
-;;                                  'action (lambda (_arg)
-;;                                            (interactive)
-;;                                            (find-file (eglot--uri-to-path uri))
-;;                                            (goto-char (car (eglot--range-region range)))))
-;;                (cl-loop for child across (plist-get node :children)
-;;                         do (push (cons (1+ depth) child) tree)))))))
-;;    (eglot--error "Hierarchy unavailable")))
-
 
 
 
