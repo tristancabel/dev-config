@@ -1,37 +1,60 @@
 {
   "providers": {
-    "mistral": {
-      "baseUrl": "https://codestral.mistral.ai/v1",
-      "apikey": "${MISTRAL_SECRET}"
+    "mlx": {
+      "baseUrl": "http://127.0.0.1:8080/v1",
+      "api": "openai-completions",
+      "apiKey": "local",
+      "compat": {
+        "supportsDeveloperRole": false,
+        "supportsReasoningEffort": false,
+        "supportsUsageInStreaming": false,
+        "maxTokensField": "max_tokens"
+      },
+      "models": [
+        {
+          "id": "unsloth/Qwen3.6-27B-MLX-8bit",
+          "name": "Qwen3.6 27B MLX 8-bit",
+          "reasoning": false,
+          "input": ["text"],
+          "contextWindow": 131072,
+          "maxTokens": 8192,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0
+          }
+        }
+      ]
     }
   },
-  "defaultModel": "mistral/codestral-latest",
+  "defaultModel": "mlx/unsloth/Qwen3.6-27B-MLX-8bit",
   "defaultThinkingLevel": "medium",
 
   "routing": {
     "scout": {
-      "provider": "mistral",
-      "model": "codestral-latest",
+      "provider": "mlx",
+      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "low"
     },
     "planner": {
-      "provider": "mistral",
-      "model": "codestral-latest",
+      "provider": "mlx",
+      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "high"
     },
     "builder": {
-      "provider": "mistral",
-      "model": "codestral-latest",
+      "provider": "mlx",
+      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "medium"
     },
     "reviewer": {
-      "provider": "mistral",
-      "model": "codestral-latest",
+      "provider": "mlx",
+      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "high"
     },
     "verifier": {
-      "provider": "mistral",
-      "model": "codestral-latest",
+      "provider": "mlx",
+      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "medium"
     }
   }

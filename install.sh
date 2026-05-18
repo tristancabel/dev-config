@@ -14,7 +14,7 @@ echo "-- Installing Pi..."
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash
 source ~/.bashrc
 nvm install node
-npm install -g @mariozechner/pi-coding-agent
+npm install -g @earendil-work/pi-coding-agent
 
 echo "-- Symbolic links..."
 ln -s ~/Tools/dev-config/emacs ~/.emacs.d

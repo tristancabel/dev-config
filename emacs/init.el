@@ -106,11 +106,9 @@
  ;; If you edit it by hand, you could mess it up, so be careful.
  ;; Your init file should contain only one such instance.
  ;; If there is more than one, they won't work right.
- ;;'(conda-anaconda-home "/home/trcabel/miniconda3/" t)
  '(ispell-dictionary nil)
  '(ivy-mode t)
- '(package-selected-packages
-   '(eat company-box company company-qml js2-mode lsp-bridge browse-kill-ring markdown-mode json-mode conda projectile counsel ivy which-key beacon git-gutter-fringe magit which-key-mode beacon-mode undo-tree smart-mode-line use-package))
+ '(package-selected-packages nil)
  '(safe-local-variable-values
    '((eval setq conda-project-env-path "gnomon")
      (conda-project-env-path . "gnomon")
