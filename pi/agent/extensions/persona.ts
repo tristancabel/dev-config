@@ -90,15 +90,22 @@ const EFFORT_STATE_TYPE = "pi-effort-state";
 const WORKTREE_STATE_TYPE = "pi-worktree-state";
 const DEFAULT_PROFILE = "conversation";
 const PERSONA_STATUS_KEY = "pi-persona";
+const PATH_STATUS_KEY = "pi-path";
 const PLAN_STATUS_KEY = "pi-plan";
 const EFFORT_STATUS_KEY = "pi-effort";
 const VERIFY_STATUS_KEY = "pi-verify";
 const PLAN_DIRECTORY = join(".pi", "plans");
 const PLAN_FILE_NAME = "active-plan.md";
 const PLAN_COMMANDS = ["status", "show", "approve", "draft", "edit", "new", "remove", "path"];
+const PATH_COMMANDS = ["status", "conversation", "dev"];
+const WORKFLOW_COMMANDS = ["status"];
 const EFFORT_LEVELS: EffortMode[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"];
 const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
-const DEFAULT_PERSONA_PRIORITY = ["conversation", "planner", "scout", "builder", "reviewer", "verifier"];
+const DEFAULT_PERSONA_PRIORITY = ["conversation", "dev-planner", "scout", "builder", "reviewer", "verifier"];
+const PROFILE_ALIASES: Record<string, string> = {
+	architect: "dev-planner",
+	planner: "dev-planner",
+};
 const GLOBAL_PROFILES_PATH = fileURLToPath(new URL("../profiles.json", import.meta.url));
 const GLOBAL_GUARDRAILS_PATH = fileURLToPath(new URL("../../guardrails.json", import.meta.url));
 const GLOBAL_MODELS_PATH = fileURLToPath(new URL("../models.json", import.meta.url));
@@ -463,14 +470,29 @@ function getProfile(loadedProfiles: LoadedProfiles, name: string | undefined): P
 	return loadedProfiles.profiles[name];
 }
 
+function normalizeProfileName(name: string | undefined): string | undefined {
+	if (!name) return undefined;
+	const normalized = name.trim();
+	return PROFILE_ALIASES[normalized] ?? normalized;
+}
+
 function getProfileArgumentCompletions(loadedProfiles: LoadedProfiles, prefix: string) {
-	return getProfileNames(loadedProfiles)
+	const aliases = Object.keys(PROFILE_ALIASES).filter((alias) => getProfile(loadedProfiles, PROFILE_ALIASES[alias]));
+	return [...getProfileNames(loadedProfiles), ...aliases]
 		.filter((name) => name.startsWith(prefix))
 		.map((name) => ({ value: name, label: name }));
 }
 
 function getPlanArgumentCompletions(prefix: string) {
 	return PLAN_COMMANDS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
+}
+
+function getPathArgumentCompletions(prefix: string) {
+	return PATH_COMMANDS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
+}
+
+function getWorkflowArgumentCompletions(prefix: string) {
+	return WORKFLOW_COMMANDS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
 }
 
 function getEffortArgumentCompletions(prefix: string) {
@@ -648,6 +670,10 @@ function formatVerificationLabel(context: VerificationContext): string {
 	return `${context.primary}${suffix}`;
 }
 
+function getWorkflowPath(profileName: string): "conversation" | "dev" {
+	return profileName === "conversation" ? "conversation" : "dev";
+}
+
 function buildPermissionModeSection(mode: PermissionMode): string {
 	if (mode === "read-only") {
 		return [
@@ -821,7 +847,7 @@ function buildWorkflowSection(
 		);
 	}
 
-	if (profileName === "planner") {
+	if (profileName === "dev-planner") {
 		lines.push(
 			"",
 			`Your response will be saved automatically to \`${getRelativePlanPath(cwd)}\` as a draft plan.`,
@@ -835,7 +861,7 @@ function buildWorkflowSection(
 			lines.push(
 				"No active plan is available.",
 				"Proceed with small, clear implementation requests when the user intent and success criteria are obvious.",
-				"For ambiguous, multi-step, risky, architectural, or product-shaping work, ask the user to switch to planner first.",
+				"For ambiguous, multi-step, risky, architectural, or product-shaping work, ask the user to switch to dev-planner first.",
 			);
 		} else if (plan.status === "approved") {
 			lines.push(
@@ -876,6 +902,8 @@ function buildWorkflowSection(
 		"",
 		"Workflow commands:",
 		"- `/persona` to switch persona",
+		"- `/path conversation|dev` to switch workflow path",
+		"- `/workflow status` to inspect persona, path, plan, tools, and builder mode",
 		"- `/plan` to inspect, create, edit, approve, or remove the active plan",
 		"- `/effort` to inspect or override reasoning effort",
 	);
@@ -1033,6 +1061,8 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		const plan = readPlan(ctx.cwd);
 		const mode = getEffectivePermissionMode(activeProfileName, profile, plan);
 		const currentThinkingLevel = pi.getThinkingLevel();
+		const workflowPath = getWorkflowPath(activeProfileName);
+		ctx.ui.setStatus(PATH_STATUS_KEY, ctx.ui.theme.fg(workflowPath === "conversation" ? "success" : "accent", `path:${workflowPath}`));
 		ctx.ui.setStatus(PERSONA_STATUS_KEY, ctx.ui.theme.fg("accent", `${activeProfileName}:${mode}`));
 
 		const effortLabel =
@@ -1153,7 +1183,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			writePlan(ctx.cwd, {
 				status: "draft",
 				updatedAt: new Date().toISOString(),
-				sourceProfile: activeProfileName === "planner" ? "planner" : "manual",
+				sourceProfile: activeProfileName === "dev-planner" ? "dev-planner" : "manual",
 				body: editedBody.trim(),
 			});
 			await applyProfile(activeProfileName, ctx);
@@ -1179,7 +1209,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			writePlan(ctx.cwd, {
 				status: "draft",
 				updatedAt: new Date().toISOString(),
-				sourceProfile: existingPlan?.sourceProfile ?? "planner",
+				sourceProfile: existingPlan?.sourceProfile ?? "dev-planner",
 				body: editedBody.trim(),
 			});
 			await applyProfile(activeProfileName, ctx);
@@ -1193,6 +1223,75 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		}
 
 		ctx.ui.notify(`Unknown /plan action "${action}". Try: ${PLAN_COMMANDS.join(", ")}`, "error");
+	}
+
+	async function handlePathCommand(args: string, ctx: ExtensionContext): Promise<void> {
+		const action = args.trim().toLowerCase() || "status";
+
+		if (action === "status") {
+			ctx.ui.notify(`Workflow path: ${getWorkflowPath(activeProfileName)} | Persona: ${activeProfileName}`, "info");
+			return;
+		}
+
+		if (action === "conversation") {
+			if (!getProfile(loadedProfiles, "conversation")) {
+				ctx.ui.notify("Conversation path is unavailable because the conversation profile is not configured.", "error");
+				return;
+			}
+
+			await applyProfile("conversation", ctx, { notify: true, persist: true });
+			ctx.ui.notify("Conversation path active: Q&A and web research, project files read-only.", "info");
+			return;
+		}
+
+		if (action === "dev") {
+			const target = getProfile(loadedProfiles, "dev-planner") ? "dev-planner" : "builder";
+			if (!getProfile(loadedProfiles, target)) {
+				ctx.ui.notify("Dev path is unavailable because neither dev-planner nor builder is configured.", "error");
+				return;
+			}
+
+			await applyProfile(target, ctx, { notify: true, persist: true });
+			ctx.ui.notify(`Dev path active: ${target}${target === "dev-planner" ? " will clarify and plan first." : " is ready for focused implementation."}`, "info");
+			return;
+		}
+
+		ctx.ui.notify(`Unknown /path action "${action}". Try: ${PATH_COMMANDS.join(", ")}`, "error");
+	}
+
+	function buildWorkflowStatus(ctx: ExtensionContext): string {
+		const profile = getCurrentProfile();
+		const plan = readPlan(ctx.cwd);
+		const allToolNames = pi.getAllTools().map((tool) => tool.name);
+		const activeTools = profile ? getAllowedTools(activeProfileName, profile, plan, allToolNames) : [];
+		const webTools = ["web_search", "fetch_content", "get_search_content", "brave_search", "brave_grounding"];
+		const availableWebTools = activeTools.filter((tool) => webTools.includes(tool));
+		const mode = profile ? getEffectivePermissionMode(activeProfileName, profile, plan) : "unknown";
+		const planLabel = plan ? `${plan.status} (${getRelativePlanPath(ctx.cwd)})` : `none (${getRelativePlanPath(ctx.cwd)})`;
+		const builderMode = getProfile(loadedProfiles, "builder")
+			? "guided: edits allowed without plan approval; dev-planner recommended for ambiguous work"
+			: "builder profile unavailable";
+
+		return [
+			`Path: ${getWorkflowPath(activeProfileName)}`,
+			`Persona: ${activeProfileName}`,
+			`Permission mode: ${mode}`,
+			`Plan: ${planLabel}`,
+			`Builder mode: ${builderMode}`,
+			`Web tools: ${availableWebTools.length > 0 ? availableWebTools.join(", ") : "none active"}`,
+			`Aliases: planner → dev-planner, architect → dev-planner`,
+		].join("\n");
+	}
+
+	async function handleWorkflowCommand(args: string, ctx: ExtensionContext): Promise<void> {
+		const action = args.trim().toLowerCase() || "status";
+
+		if (action === "status") {
+			ctx.ui.notify(buildWorkflowStatus(ctx), "info");
+			return;
+		}
+
+		ctx.ui.notify(`Unknown /workflow action "${action}". Try: ${WORKFLOW_COMMANDS.join(", ")}`, "error");
 	}
 
 	pi.registerFlag("persona", {
@@ -1209,7 +1308,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		description: "Switch persona profile",
 		getArgumentCompletions: (prefix) => getProfileArgumentCompletions(loadedProfiles, prefix),
 		handler: async (args, ctx) => {
-			const requested = args.trim();
+			const requested = normalizeProfileName(args.trim()) ?? "";
 			let targetProfile = requested;
 
 			if (!requested) {
@@ -1236,6 +1335,22 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		getArgumentCompletions: (prefix) => getPlanArgumentCompletions(prefix),
 		handler: async (args, ctx) => {
 			await handlePlanCommand(args, ctx);
+		},
+	});
+
+	pi.registerCommand("path", {
+		description: "Switch or inspect the conversation/dev workflow path",
+		getArgumentCompletions: (prefix) => getPathArgumentCompletions(prefix),
+		handler: async (args, ctx) => {
+			await handlePathCommand(args, ctx);
+		},
+	});
+
+	pi.registerCommand("workflow", {
+		description: "Inspect Pi workflow status",
+		getArgumentCompletions: (prefix) => getWorkflowArgumentCompletions(prefix),
+		handler: async (args, ctx) => {
+			await handleWorkflowCommand(args, ctx);
 		},
 	});
 
@@ -1267,11 +1382,11 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		loadedModels = loadModels(ctx.cwd);
 
 		const personaFlag = pi.getFlag("persona");
-		const flaggedProfile = typeof personaFlag === "string" ? personaFlag.trim() : "";
-		const storedProfile = getLatestCustomEntryData<{ name?: string }>(ctx, PROFILE_STATE_TYPE);
+		const flaggedProfile = typeof personaFlag === "string" ? normalizeProfileName(personaFlag.trim()) ?? "" : "";
+		const storedProfile = normalizeProfileName(getLatestCustomEntryData<{ name?: string }>(ctx, PROFILE_STATE_TYPE)?.name);
 		const initialProfile =
 			(flaggedProfile && getProfile(loadedProfiles, flaggedProfile) && flaggedProfile) ||
-			(storedProfile?.name && getProfile(loadedProfiles, storedProfile.name) && storedProfile.name) ||
+			(storedProfile && getProfile(loadedProfiles, storedProfile) && storedProfile) ||
 			loadedProfiles.defaultProfile;
 
 		if (flaggedProfile && !getProfile(loadedProfiles, flaggedProfile)) {
@@ -1417,7 +1532,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
-		if (activeProfileName === "planner") {
+		if (activeProfileName === "dev-planner") {
 			const lastAssistantMessage = [...event.messages].reverse().find(isAssistantMessage);
 			if (!lastAssistantMessage) return;
 
@@ -1427,7 +1542,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			writePlan(ctx.cwd, {
 				status: "draft",
 				updatedAt: new Date().toISOString(),
-				sourceProfile: "planner",
+				sourceProfile: "dev-planner",
 				body,
 			});
 			updateStatus(ctx);

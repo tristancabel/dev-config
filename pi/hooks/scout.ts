@@ -32,7 +32,7 @@ CONSTRAINT:
 - DO NOT modify files
 
 END:
-→ Suggest switching to planner
+→ Suggest switching to dev-planner
 → Notify: "Exploration complete"
 `
     };

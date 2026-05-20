@@ -42,7 +42,7 @@
       "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "low"
     },
-    "planner": {
+    "dev-planner": {
       "provider": "mlx",
       "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "high"
