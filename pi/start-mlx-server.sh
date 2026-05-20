@@ -30,12 +30,6 @@ if curl -s "http://${MLX_HOST}:${MLX_PORT}/v1/models" >/dev/null 2>&1; then
   exit 0
 fi
 
-# Check that the model directory exists
-if [[ ! -d "$MLX_MODEL" ]]; then
-  echo "ERROR: Model directory not found: $MLX_MODEL"
-  echo "Set MLX_MODEL to the correct path or edit this script."
-  exit 1
-fi
 
 # ── Launch ─────────────────────────────────────────────────────────
 

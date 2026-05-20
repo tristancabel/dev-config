@@ -4,12 +4,13 @@ export default {
     systemPromptAppend: `
 WORKFLOW:
 
+- conversation → answer and research only
 - scout → explore only
-- planner → plan only
-- builder → code only
+- planner → clarify, research, and plan only
+- builder → code focused changes; ask for planner when ambiguous
 - reviewer → review only
 
-If mismatch → refuse
+If a request clearly belongs to another path, suggest or switch persona instead of refusing by default.
 `
   })
 }

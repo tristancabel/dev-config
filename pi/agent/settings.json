@@ -8,7 +8,7 @@
     "npm:pi-peon-ping",
     "npm:@aliou/pi-guardrails"
   ],
-  "lastChangelogVersion": "0.75.1",
+  "lastChangelogVersion": "0.75.3",
   "defaultProvider": "mlx",
   "defaultModel": "unsloth/Qwen3.6-27B-MLX-8bit"
 }

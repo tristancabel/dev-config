@@ -88,7 +88,7 @@ type WorktreeState = {
 const PROFILE_STATE_TYPE = "pi-profile-state";
 const EFFORT_STATE_TYPE = "pi-effort-state";
 const WORKTREE_STATE_TYPE = "pi-worktree-state";
-const DEFAULT_PROFILE = "builder";
+const DEFAULT_PROFILE = "conversation";
 const PERSONA_STATUS_KEY = "pi-persona";
 const PLAN_STATUS_KEY = "pi-plan";
 const EFFORT_STATUS_KEY = "pi-effort";
@@ -98,7 +98,7 @@ const PLAN_FILE_NAME = "active-plan.md";
 const PLAN_COMMANDS = ["status", "show", "approve", "draft", "edit", "new", "remove", "path"];
 const EFFORT_LEVELS: EffortMode[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"];
 const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
-const DEFAULT_PERSONA_PRIORITY = ["verifier", "reviewer", "planner", "scout", "builder"];
+const DEFAULT_PERSONA_PRIORITY = ["conversation", "planner", "scout", "builder", "reviewer", "verifier"];
 const GLOBAL_PROFILES_PATH = fileURLToPath(new URL("../profiles.json", import.meta.url));
 const GLOBAL_GUARDRAILS_PATH = fileURLToPath(new URL("../../guardrails.json", import.meta.url));
 const GLOBAL_MODELS_PATH = fileURLToPath(new URL("../models.json", import.meta.url));
@@ -478,26 +478,19 @@ function getEffortArgumentCompletions(prefix: string) {
 }
 
 function getEffectivePermissionMode(
-	profileName: string,
+	_profileName: string,
 	profile: ProfileDefinition,
-	plan: PlanDocument | undefined,
+	_plan: PlanDocument | undefined,
 ): PermissionMode {
-	if (profileName === "builder" && plan?.status !== "approved") {
-		return "read-only";
-	}
 	return profile.permissionMode;
 }
 
 function getAllowedTools(
-	profileName: string,
+	_profileName: string,
 	profile: ProfileDefinition,
-	plan: PlanDocument | undefined,
+	_plan: PlanDocument | undefined,
 	allToolNames: string[],
 ): string[] {
-	if (profileName === "builder" && plan?.status !== "approved") {
-		return READ_ONLY_TOOLS.filter((name) => allToolNames.includes(name));
-	}
-
 	if (profile.tools && profile.tools.length > 0) {
 		return profile.tools.filter((name) => allToolNames.includes(name));
 	}
@@ -832,27 +825,29 @@ function buildWorkflowSection(
 		lines.push(
 			"",
 			`Your response will be saved automatically to \`${getRelativePlanPath(cwd)}\` as a draft plan.`,
-			"The user must approve it with `/plan approve` before builder can edit files.",
+			"`/plan approve` marks the plan as ready, but builder is guided by plan status rather than hard-blocked by it.",
 		);
 	}
 
 	if (profileName === "builder") {
 		lines.push("");
-		if (!plan || plan.status !== "approved") {
+		if (!plan) {
 			lines.push(
-				"Builder gate: no approved plan is available.",
-				`Stay read-only and explain that implementation is blocked until a plan is approved with \`/plan approve\`.`,
+				"No active plan is available.",
+				"Proceed with small, clear implementation requests when the user intent and success criteria are obvious.",
+				"For ambiguous, multi-step, risky, architectural, or product-shaping work, ask the user to switch to planner first.",
 			);
-
-			if (plan) {
-				lines.push(`Current plan status: ${plan.status} at \`${getRelativePlanPath(cwd)}\`.`);
-			} else {
-				lines.push(`No plan file exists yet. Ask the user to switch to planner or run \`/plan new\` to create one.`);
-			}
-		} else {
+		} else if (plan.status === "approved") {
 			lines.push(
 				`Approved plan source: \`${getRelativePlanPath(cwd)}\``,
 				"Execute the approved plan below with focused, minimal edits:",
+				"",
+				plan.body.trim(),
+			);
+		} else {
+			lines.push(
+				`Draft plan source: \`${getRelativePlanPath(cwd)}\``,
+				"Use this draft as guidance, but confirm or re-plan before making changes when the draft leaves important decisions open:",
 				"",
 				plan.body.trim(),
 			);
@@ -1001,13 +996,6 @@ export default function personaExtension(pi: ExtensionAPI): void {
 				`Persona: ${profileName} (${effectiveMode}${routeMessage}, effort ${currentThinkingLevel})`,
 				"info",
 			);
-		}
-
-		if (
-			profileName === "builder" &&
-			getEffectivePermissionMode(profileName, profile, plan) === "read-only"
-		) {
-			ctx.ui.notify("Builder is locked to read-only until the active plan is approved.", "warning");
 		}
 
 		return true;
