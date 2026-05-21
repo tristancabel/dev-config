@@ -61,6 +61,8 @@ Start the server with:
 ./pi/start-mlx-server.sh
 ```
 
+Pi also launches this script automatically when a Pi session starts. Set `PI_AUTO_START_MLX=0` before launching Pi to disable the automatic startup for that session.
+
 > **Note:** `start-mlx-server.sh` is a placeholder — fill in your model path and launch command before running.
 
 ### Extensions
