@@ -42,7 +42,7 @@
 ## Features
 - declarative persona profiles
 - role-aware permission modes
-- automatic MLX server launch on Pi session start via `start-mlx-server.sh`
+- automatic oMLX server launch on Pi session start via `start-omlx-server.sh`
 - hard read-only isolation for conversation, scout, and dev-planner
 - persistent project plan at `.pi/plans/active-plan.md`
 - guided builder workflow with plan status but no approval gate
@@ -79,13 +79,13 @@ C++:
 Python:
   use ruff + pytest
 
-## MLX Server Startup
-Pi starts the local MLX server automatically on each session start by running:
+## oMLX Server Startup
+Pi starts the local oMLX server automatically on each session start by running:
 
 ```bash
-~/.pi/start-mlx-server.sh
+~/.pi/start-omlx-server.sh
 ```
 
-The launcher is idempotent: if the server is already answering on `127.0.0.1:8080`, it exits without starting another copy. Startup output is appended to `~/.pi/logs/mlx-startup.log`.
+The launcher is idempotent: if the server is already answering on `127.0.0.1:8000`, it exits without starting another copy. Startup output is appended to `~/.pi/logs/omlx-startup.log`.
 
-Set `PI_AUTO_START_MLX=0` before launching Pi to skip automatic startup for that session.
+Set `PI_AUTO_START_OMLX=0` before launching Pi to skip automatic startup for that session.

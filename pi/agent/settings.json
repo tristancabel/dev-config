@@ -9,6 +9,6 @@
     "npm:@aliou/pi-guardrails"
   ],
   "lastChangelogVersion": "0.75.3",
-  "defaultProvider": "mlx",
+  "defaultProvider": "omlx",
   "defaultModel": "unsloth/Qwen3.6-27B-MLX-8bit"
 }

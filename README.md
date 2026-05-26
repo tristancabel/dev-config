@@ -10,7 +10,7 @@ Dotfiles for **Emacs** and the **Pi coding agent**.
 │   ├── agent/          Models, profiles, settings, extensions
 │   ├── guardrails.json Safety rules for Pi tool execution
 │   ├── hooks/          Pi lifecycle hooks
-│   └── start-mlx-server.sh  MLX local model server launcher
+│   └── start-omlx-server.sh oMLX local model server launcher
 ├── install.sh          Bootstrap script (macOS + Linux)
 └── README.md           This file
 ```
@@ -51,19 +51,19 @@ ln -s /path/to/dev-config/pi    ~/.pi
 
 ## Pi Setup
 
-### Local MLX Model
+### Local oMLX Model
 
-This config uses a local MLX model (`unsloth/Qwen3.6-27B-MLX-8bit`) served on `localhost:8080`.
+This config uses a local oMLX server with the `unsloth/Qwen3.6-27B-MLX-8bit` model served on `localhost:8000`.
 
 Start the server with:
 
 ```bash
-./pi/start-mlx-server.sh
+./pi/start-omlx-server.sh
 ```
 
-Pi also launches this script automatically when a Pi session starts. Set `PI_AUTO_START_MLX=0` before launching Pi to disable the automatic startup for that session.
+Pi also launches this script automatically when a Pi session starts. Set `PI_AUTO_START_OMLX=0` before launching Pi to disable the automatic startup for that session.
 
-> **Note:** `start-mlx-server.sh` is a placeholder — fill in your model path and launch command before running.
+The oMLX server API key is configured in `~/.omlx/settings.json` under `auth.api_key`, or with `OMLX_API_KEY` when starting `omlx serve`. `pi/agent/models.json` uses `"apiKey": "OMLX_API_KEY"`, so keep the real secret in your environment, not in git. `authHeader: true` sends it as a bearer token.
 
 ### Extensions
 

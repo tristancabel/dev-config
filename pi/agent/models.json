@@ -1,23 +1,18 @@
 {
   "providers": {
-    "mlx": {
-      "baseUrl": "http://127.0.0.1:8080/v1",
+    "omlx": {
+      "baseUrl": "http://127.0.0.1:8000/v1",
       "api": "openai-completions",
-      "apiKey": "local",
-      "compat": {
-        "supportsDeveloperRole": false,
-        "supportsReasoningEffort": false,
-        "supportsUsageInStreaming": false,
-        "maxTokensField": "max_tokens"
-      },
+      "apiKey": "OMLX_API_KEY",
+      "authHeader": true,
       "models": [
         {
           "id": "unsloth/Qwen3.6-27B-MLX-8bit",
-          "name": "Qwen3.6 27B MLX 8-bit",
+          "name": "Qwen3.6 27B MLX 8-bit via oMLX",
           "reasoning": false,
           "input": ["text"],
-          "contextWindow": 131072,
-          "maxTokens": 8192,
+          "contextWindow": 32768,
+          "maxTokens": 32768,
           "cost": {
             "input": 0,
             "output": 0,
@@ -28,37 +23,37 @@
       ]
     }
   },
-  "defaultModel": "mlx/unsloth/Qwen3.6-27B-MLX-8bit",
+  "defaultModel": "omlx/unsloth/Qwen3.6-27B-MLX-8bit",
   "defaultThinkingLevel": "medium",
 
   "routing": {
     "conversation": {
-      "provider": "mlx",
+      "provider": "omlx",
       "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "medium"
     },
     "scout": {
-      "provider": "mlx",
+      "provider": "omlx",
       "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "low"
     },
     "dev-planner": {
-      "provider": "mlx",
+      "provider": "omlx",
       "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "high"
     },
     "builder": {
-      "provider": "mlx",
+      "provider": "omlx",
       "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "medium"
     },
     "reviewer": {
-      "provider": "mlx",
+      "provider": "omlx",
       "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "high"
     },
     "verifier": {
-      "provider": "mlx",
+      "provider": "omlx",
       "model": "unsloth/Qwen3.6-27B-MLX-8bit",
       "thinkingLevel": "medium"
     }

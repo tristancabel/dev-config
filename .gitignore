@@ -4,9 +4,6 @@ elpa
 recentf
 projectile-bookmarks.eld
 .emacs*
-anaconda-mode/*
-backups/*
-ensime/*
-tramp
+logs/
 eln-cache
 .pi

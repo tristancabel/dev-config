@@ -6,18 +6,18 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const PI_DIR = join(EXTENSION_DIR, "..", "..");
-const START_SCRIPT = join(PI_DIR, "start-mlx-server.sh");
+const START_SCRIPT = join(PI_DIR, "start-omlx-server.sh");
 const LOG_DIR = join(PI_DIR, "logs");
-const LOG_PATH = join(LOG_DIR, "mlx-startup.log");
+const LOG_PATH = join(LOG_DIR, "omlx-startup.log");
 
-export default function mlxStartupExtension(pi: ExtensionAPI): void {
+export default function omlxStartupExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
-		if (process.env.PI_AUTO_START_MLX === "0") {
+		if (process.env.PI_AUTO_START_OMLX === "0") {
 			return;
 		}
 
 		if (!existsSync(START_SCRIPT)) {
-			ctx.ui.notify(`MLX startup script not found: ${relative(ctx.cwd, START_SCRIPT)}`, "warning");
+			ctx.ui.notify(`oMLX startup script not found: ${relative(ctx.cwd, START_SCRIPT)}`, "warning");
 			return;
 		}
 
@@ -32,10 +32,10 @@ export default function mlxStartupExtension(pi: ExtensionAPI): void {
 			});
 
 			child.unref();
-			ctx.ui.notify(`Starting MLX server via ${relative(ctx.cwd, START_SCRIPT)}`, "info");
+			ctx.ui.notify(`Starting oMLX server via ${relative(ctx.cwd, START_SCRIPT)}`, "info");
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			ctx.ui.notify(`Failed to start MLX server: ${message}`, "error");
+			ctx.ui.notify(`Failed to start oMLX server: ${message}`, "error");
 		} finally {
 			closeSync(logFd);
 		}
