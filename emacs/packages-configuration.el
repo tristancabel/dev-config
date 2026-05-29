@@ -433,7 +433,23 @@
 ;; ;;;;;;;;;;;;;;;;;;;;
 (use-package eat
   :ensure t
-  :commands (eat))
+  :commands (eat)
+  :init
+  (setq eat-term-terminfo-directory
+        (expand-file-name "terminfo"
+                          (if (boundp 'my/emacs-config-directory)
+                              my/emacs-config-directory
+                            user-emacs-directory)))
+  :config
+  (defun my/eat-send-backspace ()
+    "Send a terminal backspace from an Eat buffer."
+    (interactive)
+    (eat-self-input 1 'backspace))
+
+  ;; macOS Emacs may report the physical Delete key as <delete>, while
+  ;; shells expect DEL/backspace for backward character deletion.
+  (define-key eat-char-mode-map (kbd "<delete>") #'my/eat-send-backspace)
+  (define-key eat-semi-char-mode-map (kbd "<delete>") #'my/eat-send-backspace))
 
 ;; neotree
 ;; ;;;;;;;;;;;;;;;;;;;;
