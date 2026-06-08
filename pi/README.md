@@ -38,6 +38,10 @@
 - /lang refresh
 - /lang python on|off|auto
 - /lang cpp on|off|auto
+- /run <agent> "<task>" (subagents)
+- /chain agent1 "<task>" -> agent2 "<task>" (subagents)
+- /parallel agent1 "<task>" -> agent2 "<task>" (subagents)
+- /subagents-doctor
 
 ## Features
 - declarative persona profiles
@@ -66,6 +70,21 @@
 - verifier focus and workflow prompts stay aligned with the active worktree
 - project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
 - workflow enforcement through Pi extensions
+- optional subagent delegation for second opinions, parallel review, chains, and background scouting
+
+## Subagents
+This setup includes `pi-subagents` for optional child-agent delegation.
+
+Use it when a task benefits from another focused Pi session:
+- `oracle` for second opinions before risky decisions
+- `scout` for background or fresh-context code exploration
+- `planner` for a child-generated implementation plan
+- `worker` for executing an already clear plan
+- `reviewer` for fresh review, parallel review, and review loops
+
+Keep the parent session as the orchestrator. For everyday small edits and direct questions, the normal persona workflow is simpler.
+
+See [`SUBAGENTS.md`](SUBAGENTS.md) for a tutorial and recommended local workflows.
 
 ## macOS Notes
 - Worktree staging uses the host temp directory instead of assuming `/tmp`.

@@ -6,7 +6,8 @@
     "npm:pi-anycopy",
     "npm:pi-agentic-compaction",
     "npm:pi-peon-ping",
-    "npm:@aliou/pi-guardrails"
+    "npm:@aliou/pi-guardrails",
+    "npm:pi-subagents"
   ],
   "lastChangelogVersion": "0.75.3",
   "defaultProvider": "omlx",

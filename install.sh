@@ -65,6 +65,7 @@ pi install npm:pi-anycopy
 pi install npm:pi-agentic-compaction
 pi install npm:pi-peon-ping
 pi install npm:@aliou/pi-guardrails
+pi install npm:pi-subagents
 
 echo "🐍 Python tools..."
 pipx install libcst || true

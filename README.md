@@ -76,6 +76,9 @@ The following Pi packages are installed by `install.sh`:
 - `pi-agentic-compaction` — Context compaction
 - `pi-peon-ping` — Peon ping
 - `@aliou/pi-guardrails` — Safety guardrails
+- `pi-subagents` — Child-agent delegation, chains, parallel review, and background runs
+
+See [`pi/SUBAGENTS.md`](pi/SUBAGENTS.md) for the local usage guide.
 
 ## Emacs
 
