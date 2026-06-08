@@ -9,7 +9,7 @@
     "npm:@aliou/pi-guardrails",
     "npm:pi-subagents"
   ],
-  "lastChangelogVersion": "0.75.3",
+  "lastChangelogVersion": "0.78.1",
   "defaultProvider": "omlx",
   "defaultModel": "unsloth/Qwen3.6-27B-MLX-8bit"
 }

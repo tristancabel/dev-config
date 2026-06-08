@@ -3,16 +3,18 @@
     "omlx": {
       "baseUrl": "http://127.0.0.1:8000/v1",
       "api": "openai-completions",
-      "apiKey": "OMLX_API_KEY",
+      "apiKey": "$OMLX_API_KEY",
       "authHeader": true,
       "models": [
         {
           "id": "unsloth/Qwen3.6-27B-MLX-8bit",
           "name": "Qwen3.6 27B MLX 8-bit via oMLX",
           "reasoning": false,
-          "input": ["text"],
-          "contextWindow": 32768,
-          "maxTokens": 32768,
+          "input": [
+            "text"
+          ],
+          "contextWindow": 65536,
+          "maxTokens": 16384,
           "cost": {
             "input": 0,
             "output": 0,
@@ -25,7 +27,6 @@
   },
   "defaultModel": "omlx/unsloth/Qwen3.6-27B-MLX-8bit",
   "defaultThinkingLevel": "medium",
-
   "routing": {
     "conversation": {
       "provider": "omlx",
