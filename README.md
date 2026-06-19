@@ -65,6 +65,10 @@ Pi also launches this script automatically when a Pi session starts. Set `PI_AUT
 
 The oMLX server API key is configured in `~/.omlx/settings.json` under `auth.api_key`, or with `OMLX_API_KEY` when starting `omlx serve`. `pi/agent/models.json` uses `"apiKey": "OMLX_API_KEY"`, so keep the real secret in your environment, not in git. `authHeader: true` sends it as a bearer token.
 
+### Web Search
+
+`pi/web-search.json` disables the interactive web-search curator by default so agent searches return directly instead of waiting on a review UI. Use `/curator on` in Pi when you explicitly want to review search results interactively.
+
 ### Extensions
 
 The following Pi packages are installed by `install.sh`:
@@ -77,6 +81,9 @@ The following Pi packages are installed by `install.sh`:
 - `pi-peon-ping` — Peon ping
 - `@aliou/pi-guardrails` — Safety guardrails
 - `pi-subagents` — Child-agent delegation, chains, parallel review, and background runs
+- `@juicesharp/rpiv-ask-user-question` — Structured clarification questions
+- `@plannotator/pi-extension` — Interactive plan, message, and code review annotations
+- `pi-session-cleanup` — Interactive batch session cleanup and safe deletion
 
 See [`pi/SUBAGENTS.md`](pi/SUBAGENTS.md) for the local usage guide.
 

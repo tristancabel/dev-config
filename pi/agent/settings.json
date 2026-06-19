@@ -7,9 +7,13 @@
     "npm:pi-agentic-compaction",
     "npm:pi-peon-ping",
     "npm:@aliou/pi-guardrails",
-    "npm:pi-subagents"
+    "npm:pi-subagents",
+    "npm:@juicesharp/rpiv-ask-user-question",
+    "npm:@plannotator/pi-extension",
+    "npm:pi-session-cleanup"
   ],
-  "lastChangelogVersion": "0.78.1",
+  "lastChangelogVersion": "0.79.7",
   "defaultProvider": "omlx",
-  "defaultModel": "unsloth/Qwen3.6-27B-MLX-8bit"
+  "defaultModel": "unsloth/Qwen3.6-27B-MLX-8bit",
+  "theme": "dark"
 }

@@ -66,6 +66,9 @@ pi install npm:pi-agentic-compaction
 pi install npm:pi-peon-ping
 pi install npm:@aliou/pi-guardrails
 pi install npm:pi-subagents
+pi install npm:@juicesharp/rpiv-ask-user-question
+pi install npm:@plannotator/pi-extension
+pi install npm:pi-session-cleanup
 
 echo "🐍 Python tools..."
 pipx install libcst || true
