@@ -10,7 +10,8 @@
 
 ## Paths
 - Conversation path: use `conversation` for normal questions, internet lookup, source fetching, and concise answers.
-- Dev path: use `dev-planner → builder → reviewer`; dev-planner grills for clarifications and drafts the approach, builder implements, reviewer audits.
+- Dev path: use `dev-planner → builder → reviewer → dev-planner acceptance`; builder fixes accepted blocking findings and repeats review/acceptance up to 3 total loops.
+- After acceptance, builder updates `.pi/architecture.md` or `.pi/architecture/<target>.md` when the accepted change affects system aim, targets, structure, data flow, principles, invariants, or validation.
 - `/plan approve` marks a plan as ready and keeps useful status metadata, but builder edits are no longer hard-blocked by missing approval.
 - `/path conversation` switches to Q&A and web research.
 - `/path dev` switches to the dev-planner-first development workflow.
@@ -31,6 +32,10 @@
 - /plan new
 - /plan remove
 - /plan path
+- /architecture status
+- /architecture show
+- /architecture edit
+- /architecture path
 - /effort auto|off|minimal|low|medium|high|xhigh
 - /context status|refresh|compact
 - /memory status|show|edit|path|on|off
@@ -49,11 +54,13 @@
 - automatic oMLX server launch on Pi session start via `start-omlx-server.sh`
 - hard read-only isolation for conversation, scout, and dev-planner
 - persistent project plan at `.pi/plans/active-plan.md`
-- guided builder workflow with plan status but no approval gate
+- architecture memory at `.pi/architecture.md`, with optional target splits under `.pi/architecture/`
+- guided builder workflow with reviewer plus dev-planner acceptance, capped at 3 loops
 - internet research tools for conversation and read-only/review personas
 - explicit web-use policy per persona
 - workflow path switching with `/path`
 - quick workflow dashboard with `/workflow status`
+- architecture memory dashboard and editor via `/architecture`
 - dev-planner aliases: `planner` and `architect`
 - persona-based model routing via `agent/models.json`
 - session effort overrides with `/effort`
@@ -97,6 +104,19 @@ C++:
 
 Python:
   use ruff + pytest
+
+## Architecture Memory
+
+Each project can keep durable architecture memory in:
+
+```text
+.pi/architecture.md
+.pi/architecture/<target>.md
+```
+
+Use the root file for the current system overview: aim, targets, entry points, data flow, design principles, invariants, validation strategy, and known constraints. If a target-specific section starts crowding the overview, split it into one Markdown file per app, library, service, or tool under `.pi/architecture/`.
+
+Architecture memory is current-state documentation, not a changelog. Dev personas read it automatically in the workflow prompt, and builder updates it after dev-planner accepts an architecture-sensitive change.
 
 ## oMLX Server Startup
 Pi starts the local oMLX server automatically on each session start by running:

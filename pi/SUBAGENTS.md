@@ -37,7 +37,7 @@ Subagents do not replace the local persona workflow. The parent should still dec
 Good default pattern:
 
 ```text
-clarify -> plan -> implement -> fresh review -> fix only what is worth fixing
+clarify -> plan -> implement -> fresh review -> planner acceptance -> architecture update
 ```
 
 Use subagents sparingly with the local oMLX model. Parallel runs can multiply model load quickly.
@@ -153,10 +153,10 @@ Avoid background workers unless the task is already well specified.
 Use this for larger implementation work:
 
 ```text
-Run a review loop on this change with a max of 3 rounds. Apply only fixes that are clearly in scope.
+Run a review loop on this change with a max of 3 rounds. Send reviewer findings to dev-planner for acceptance each round, and apply only accepted blocking fixes.
 ```
 
-Keep the loop capped so local model usage stays predictable.
+Keep the loop capped so local model usage stays predictable. After dev-planner accepts the implementation, update `.pi/architecture.md` or a target split under `.pi/architecture/` if the accepted change altered the current architecture.
 
 ## When Not To Use Subagents
 

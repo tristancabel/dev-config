@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
@@ -72,6 +72,17 @@ type PlanDocument = {
 	body: string;
 };
 
+type ArchitectureDocument = {
+	path: string;
+	relativePath: string;
+	body: string;
+};
+
+type ArchitectureBundle = {
+	documents: ArchitectureDocument[];
+	truncated: boolean;
+};
+
 type VerificationContext = {
 	primary: VerificationPrimary;
 	modifiers: VerificationModifier[];
@@ -96,7 +107,11 @@ const EFFORT_STATUS_KEY = "pi-effort";
 const VERIFY_STATUS_KEY = "pi-verify";
 const PLAN_DIRECTORY = join(".pi", "plans");
 const PLAN_FILE_NAME = "active-plan.md";
+const ARCHITECTURE_FILE_NAME = "architecture.md";
+const ARCHITECTURE_SPLIT_DIRECTORY = join(".pi", "architecture");
+const ARCHITECTURE_PROMPT_CHAR_LIMIT = 24000;
 const PLAN_COMMANDS = ["status", "show", "approve", "draft", "edit", "new", "remove", "path"];
+const ARCHITECTURE_COMMANDS = ["status", "show", "edit", "path"];
 const PATH_COMMANDS = ["status", "conversation", "dev"];
 const WORKFLOW_COMMANDS = ["status"];
 const EFFORT_LEVELS: EffortMode[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"];
@@ -358,6 +373,82 @@ function getRelativePlanPath(cwd: string): string {
 	return relPath.length > 0 ? relPath : getPlanPath(cwd);
 }
 
+function getArchitecturePath(cwd: string): string {
+	return join(cwd, ".pi", ARCHITECTURE_FILE_NAME);
+}
+
+function getArchitectureSplitDirectory(cwd: string): string {
+	return join(cwd, ARCHITECTURE_SPLIT_DIRECTORY);
+}
+
+function getRelativeArchitecturePath(cwd: string): string {
+	const relPath = relative(cwd, getArchitecturePath(cwd));
+	return relPath.length > 0 ? relPath : getArchitecturePath(cwd);
+}
+
+function readArchitectureDocument(cwd: string, path: string): ArchitectureDocument | undefined {
+	if (!existsSync(path)) return undefined;
+
+	try {
+		const relativePath = relative(cwd, path);
+		return {
+			path,
+			relativePath: relativePath.length > 0 ? relativePath : path,
+			body: readFileSync(path, "utf-8").trim(),
+		};
+	} catch (error) {
+		console.error(`Failed to read ${path}: ${String(error)}`);
+		return undefined;
+	}
+}
+
+function readArchitectureBundle(cwd: string): ArchitectureBundle {
+	const documents: ArchitectureDocument[] = [];
+	const rootDocument = readArchitectureDocument(cwd, getArchitecturePath(cwd));
+	if (rootDocument) documents.push(rootDocument);
+
+	const splitDirectory = getArchitectureSplitDirectory(cwd);
+	if (existsSync(splitDirectory)) {
+		try {
+			for (const entry of readdirSync(splitDirectory, { withFileTypes: true })) {
+				if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+				const document = readArchitectureDocument(cwd, join(splitDirectory, entry.name));
+				if (document) documents.push(document);
+			}
+		} catch (error) {
+			console.error(`Failed to read ${splitDirectory}: ${String(error)}`);
+		}
+	}
+
+	documents.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+
+	let remaining = ARCHITECTURE_PROMPT_CHAR_LIMIT;
+	let truncated = false;
+	const limitedDocuments: ArchitectureDocument[] = [];
+
+	for (const document of documents) {
+		if (remaining <= 0) {
+			truncated = true;
+			break;
+		}
+
+		if (document.body.length <= remaining) {
+			limitedDocuments.push(document);
+			remaining -= document.body.length;
+			continue;
+		}
+
+		limitedDocuments.push({
+			...document,
+			body: document.body.slice(0, remaining).trimEnd(),
+		});
+		truncated = true;
+		break;
+	}
+
+	return { documents: limitedDocuments, truncated };
+}
+
 function parsePlan(raw: string, path: string): PlanDocument {
 	const match = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
 	if (!match) {
@@ -485,6 +576,10 @@ function getProfileArgumentCompletions(loadedProfiles: LoadedProfiles, prefix: s
 
 function getPlanArgumentCompletions(prefix: string) {
 	return PLAN_COMMANDS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
+}
+
+function getArchitectureArgumentCompletions(prefix: string) {
+	return ARCHITECTURE_COMMANDS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
 }
 
 function getPathArgumentCompletions(prefix: string) {
@@ -847,11 +942,16 @@ function buildWorkflowSection(
 		);
 	}
 
+	if (profileName !== "conversation") {
+		lines.push("", buildArchitectureMemorySection(cwd));
+	}
+
 	if (profileName === "dev-planner") {
 		lines.push(
 			"",
 			`Your response will be saved automatically to \`${getRelativePlanPath(cwd)}\` as a draft plan.`,
 			"`/plan approve` marks the plan as ready, but builder is guided by plan status rather than hard-blocked by it.",
+			"After reviewer finishes, judge whether findings block completion and end with exactly one acceptance line: `ACCEPTANCE: ACCEPTED` or `ACCEPTANCE: CHANGES_REQUESTED`.",
 		);
 	}
 
@@ -878,6 +978,15 @@ function buildWorkflowSection(
 				plan.body.trim(),
 			);
 		}
+		lines.push(
+			"",
+			"Completion workflow:",
+			"- After implementation, send the diff through reviewer.",
+			"- Send reviewer findings to dev-planner for acceptance.",
+			"- If dev-planner returns `ACCEPTANCE: CHANGES_REQUESTED`, fix only accepted blocking issues and repeat review/acceptance, up to 3 total loops.",
+			"- After dev-planner returns `ACCEPTANCE: ACCEPTED`, update architecture memory when the accepted change affects aim, targets, structure, data flow, principles, invariants, or validation.",
+			"- Only then report task completion to the user.",
+		);
 	}
 
 	if (profileName === "reviewer") {
@@ -887,6 +996,7 @@ function buildWorkflowSection(
 			"- Findings must come first",
 			"- Use command output as evidence when you run checks",
 			"- If you find no issues, say so explicitly and mention remaining risk",
+			"- End with exactly one verdict line: `REVIEW: PASS` or `REVIEW: FAIL`.",
 		);
 	}
 
@@ -905,6 +1015,7 @@ function buildWorkflowSection(
 		"- `/path conversation|dev` to switch workflow path",
 		"- `/workflow status` to inspect persona, path, plan, tools, and builder mode",
 		"- `/plan` to inspect, create, edit, approve, or remove the active plan",
+		"- `/architecture` to inspect or edit project architecture memory",
 		"- `/effort` to inspect or override reasoning effort",
 	);
 
@@ -925,6 +1036,48 @@ function renderPlanSummary(cwd: string, plan: PlanDocument): string {
 	]
 		.filter((line): line is string => Boolean(line))
 		.join("\n");
+}
+
+function renderArchitectureBundle(cwd: string, bundle: ArchitectureBundle): string {
+	if (bundle.documents.length === 0) {
+		return [
+			"# Project Architecture",
+			"",
+			`No architecture memory found. Expected overview at \`${getRelativeArchitecturePath(cwd)}\`.`,
+			"",
+			"Use this file for durable system context: aim, targets, entry points, data flow, design principles, invariants, validation strategy, and known constraints.",
+			`When target-specific detail grows too large, split it into \`${ARCHITECTURE_SPLIT_DIRECTORY}/<target>.md\` and keep the root file as an index and overview.`,
+		].join("\n");
+	}
+
+	const lines = ["# Project Architecture Memory"];
+
+	for (const document of bundle.documents) {
+		lines.push("", `## ${document.relativePath}`, "", document.body);
+	}
+
+	if (bundle.truncated) {
+		lines.push("", "_Architecture memory was truncated for prompt size. Inspect the files directly before making architecture-sensitive decisions._");
+	}
+
+	return lines.join("\n");
+}
+
+function buildArchitectureMemorySection(cwd: string): string {
+	const bundle = readArchitectureBundle(cwd);
+	return [
+		"## Architecture Memory",
+		`Overview path: \`${getRelativeArchitecturePath(cwd)}\``,
+		`Optional split directory: \`${ARCHITECTURE_SPLIT_DIRECTORY}/\``,
+		"",
+		renderArchitectureBundle(cwd, bundle),
+		"",
+		"Architecture memory rules:",
+		"- Treat this as durable current-state documentation, not a chronological changelog.",
+		"- Read it before planning, building, reviewing, or verifying architecture-sensitive work.",
+		"- After dev-planner accepts completed code changes, update it only for meaningful changes to aim, structure, targets, data flow, principles, invariants, or validation.",
+		"- Split target-specific detail into one file per app, library, service, or tool when the overview starts getting crowded.",
+	].join("\n");
 }
 
 function getLatestCustomEntryData<T>(ctx: ExtensionContext, customType: string): T | undefined {
@@ -1225,6 +1378,85 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		ctx.ui.notify(`Unknown /plan action "${action}". Try: ${PLAN_COMMANDS.join(", ")}`, "error");
 	}
 
+	async function handleArchitectureCommand(args: string, ctx: ExtensionContext): Promise<void> {
+		const action = args.trim().toLowerCase() || "status";
+		const bundle = readArchitectureBundle(ctx.cwd);
+		const relativePath = getRelativeArchitecturePath(ctx.cwd);
+
+		if (action === "path") {
+			ctx.ui.notify(relativePath, "info");
+			return;
+		}
+
+		if (action === "status") {
+			const splitCount = bundle.documents.filter((document) => document.relativePath.startsWith(`${ARCHITECTURE_SPLIT_DIRECTORY}/`)).length;
+			const rootStatus = existsSync(getArchitecturePath(ctx.cwd)) ? "present" : "missing";
+			ctx.ui.notify(`Architecture memory: root ${rootStatus} at ${relativePath}; split files: ${splitCount}`, "info");
+			return;
+		}
+
+		if (action === "show") {
+			pi.sendMessage(
+				{
+					customType: "pi-architecture",
+					content: renderArchitectureBundle(ctx.cwd, bundle),
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+			return;
+		}
+
+		if (action === "edit") {
+			if (!ctx.hasUI) {
+				ctx.ui.notify("Architecture editing requires interactive mode", "error");
+				return;
+			}
+
+			const path = getArchitecturePath(ctx.cwd);
+			const currentBody = existsSync(path)
+				? readFileSync(path, "utf-8")
+				: [
+						"# Project Architecture",
+						"",
+						"## Aim",
+						"- ",
+						"",
+						"## Targets",
+						"- ",
+						"",
+						"## Entry Points and Data Flow",
+						"- ",
+						"",
+						"## Design Principles",
+						"- ",
+						"",
+						"## Invariants",
+						"- ",
+						"",
+						"## Validation",
+						"- ",
+						"",
+						"## Constraints and Tradeoffs",
+						"- ",
+					].join("\n");
+			const editedBody = await ctx.ui.editor("Edit architecture memory", currentBody);
+			if (editedBody === undefined) return;
+			if (editedBody.trim().length === 0) {
+				ctx.ui.notify("Architecture memory was not saved because it is empty", "warning");
+				return;
+			}
+
+			mkdirSync(dirname(path), { recursive: true });
+			writeFileSync(path, editedBody.trimEnd() + "\n", "utf-8");
+			await applyProfile(activeProfileName, ctx);
+			ctx.ui.notify(`Architecture memory saved to ${relativePath}`, "info");
+			return;
+		}
+
+		ctx.ui.notify(`Unknown /architecture action "${action}". Try: ${ARCHITECTURE_COMMANDS.join(", ")}`, "error");
+	}
+
 	async function handlePathCommand(args: string, ctx: ExtensionContext): Promise<void> {
 		const action = args.trim().toLowerCase() || "status";
 
@@ -1268,8 +1500,12 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		const availableWebTools = activeTools.filter((tool) => webTools.includes(tool));
 		const mode = profile ? getEffectivePermissionMode(activeProfileName, profile, plan) : "unknown";
 		const planLabel = plan ? `${plan.status} (${getRelativePlanPath(ctx.cwd)})` : `none (${getRelativePlanPath(ctx.cwd)})`;
+		const architectureBundle = readArchitectureBundle(ctx.cwd);
+		const architectureLabel = architectureBundle.documents.length > 0
+			? `${architectureBundle.documents.length} file(s) (${getRelativeArchitecturePath(ctx.cwd)})`
+			: `missing (${getRelativeArchitecturePath(ctx.cwd)})`;
 		const builderMode = getProfile(loadedProfiles, "builder")
-			? "guided: edits allowed without plan approval; dev-planner recommended for ambiguous work"
+			? "review loop: builder -> reviewer -> dev-planner acceptance, max 3 loops"
 			: "builder profile unavailable";
 
 		return [
@@ -1277,6 +1513,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			`Persona: ${activeProfileName}`,
 			`Permission mode: ${mode}`,
 			`Plan: ${planLabel}`,
+			`Architecture: ${architectureLabel}`,
 			`Builder mode: ${builderMode}`,
 			`Web tools: ${availableWebTools.length > 0 ? availableWebTools.join(", ") : "none active"}`,
 			`Aliases: planner → dev-planner, architect → dev-planner`,
@@ -1335,6 +1572,14 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		getArgumentCompletions: (prefix) => getPlanArgumentCompletions(prefix),
 		handler: async (args, ctx) => {
 			await handlePlanCommand(args, ctx);
+		},
+	});
+
+	pi.registerCommand("architecture", {
+		description: "Show, edit, or locate project architecture memory",
+		getArgumentCompletions: (prefix) => getArchitectureArgumentCompletions(prefix),
+		handler: async (args, ctx) => {
+			await handleArchitectureCommand(args, ctx);
 		},
 	});
 

@@ -69,6 +69,10 @@ The oMLX server API key is configured in `~/.omlx/settings.json` under `auth.api
 
 `pi/web-search.json` disables the interactive web-search curator by default so agent searches return directly instead of waiting on a review UI. Use `/curator on` in Pi when you explicitly want to review search results interactively.
 
+### Architecture Memory
+
+Pi projects use `.pi/architecture.md` as durable current-state architecture memory, with optional target splits under `.pi/architecture/`. Dev personas read this memory during planning, building, review, and validation, and builder updates it after dev-planner accepts architecture-sensitive changes.
+
 ### Extensions
 
 The following Pi packages are installed by `install.sh`:

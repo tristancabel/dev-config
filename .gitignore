@@ -6,4 +6,7 @@ projectile-bookmarks.eld
 .emacs*
 logs/
 eln-cache
-.pi
+.pi/*
+!.pi/architecture.md
+!.pi/architecture/
+!.pi/architecture/*.md
