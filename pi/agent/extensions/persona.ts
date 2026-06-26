@@ -982,9 +982,9 @@ function buildWorkflowSection(
 			"",
 			"Completion workflow:",
 			"- After implementation, send the diff through reviewer.",
-			"- Send reviewer findings to dev-planner for acceptance.",
-			"- If dev-planner returns `ACCEPTANCE: CHANGES_REQUESTED`, fix only accepted blocking issues and repeat review/acceptance, up to 3 total loops.",
-			"- After dev-planner returns `ACCEPTANCE: ACCEPTED`, update architecture memory when the accepted change affects aim, targets, structure, data flow, principles, invariants, or validation.",
+			"- Send reviewer findings to planner for acceptance; use the local `dev-planner` persona when switching personas, and `planner` when launching a child agent.",
+			"- If planner returns `ACCEPTANCE: CHANGES_REQUESTED`, fix only accepted blocking issues and repeat review/acceptance, up to 3 total loops.",
+			"- After planner returns `ACCEPTANCE: ACCEPTED`, update architecture memory when the accepted change affects aim, targets, structure, data flow, principles, invariants, or validation.",
 			"- Only then report task completion to the user.",
 		);
 	}
@@ -1075,7 +1075,7 @@ function buildArchitectureMemorySection(cwd: string): string {
 		"Architecture memory rules:",
 		"- Treat this as durable current-state documentation, not a chronological changelog.",
 		"- Read it before planning, building, reviewing, or verifying architecture-sensitive work.",
-		"- After dev-planner accepts completed code changes, update it only for meaningful changes to aim, structure, targets, data flow, principles, invariants, or validation.",
+		"- After planner acceptance for completed code changes, update it only for meaningful changes to aim, structure, targets, data flow, principles, invariants, or validation.",
 		"- Split target-specific detail into one file per app, library, service, or tool when the overview starts getting crowded.",
 	].join("\n");
 }
@@ -1505,7 +1505,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			? `${architectureBundle.documents.length} file(s) (${getRelativeArchitecturePath(ctx.cwd)})`
 			: `missing (${getRelativeArchitecturePath(ctx.cwd)})`;
 		const builderMode = getProfile(loadedProfiles, "builder")
-			? "review loop: builder -> reviewer -> dev-planner acceptance, max 3 loops"
+			? "review loop: builder -> reviewer -> planner acceptance, max 3 loops"
 			: "builder profile unavailable";
 
 		return [

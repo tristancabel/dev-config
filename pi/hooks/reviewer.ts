@@ -9,7 +9,7 @@ ROLE: QA / Security Lead
 
 GOAL:
 - Perform structured, critical code review
-- Provide a clear pass/fail verdict for dev-planner acceptance
+- Provide a clear pass/fail verdict for planner acceptance
 
 PROCESS:
 1. Read changed files

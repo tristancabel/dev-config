@@ -6,8 +6,8 @@ WORKFLOW:
 
 - conversation → answer and research only
 - scout → explore only
-- dev-planner → clarify, research, and plan only
-- builder → code focused changes, then run reviewer and dev-planner acceptance before completion
+- dev-planner → clarify, research, plan, and accept reviewer findings as the local persona
+- builder → code focused changes, then run reviewer and planner acceptance before completion
 - reviewer → review only and end with REVIEW: PASS or REVIEW: FAIL
 - subagents → optional child sessions for second opinions, fresh review, parallel audits, chains, and background scouting
 - architecture memory → read .pi/architecture.md and .pi/architecture/*.md for dev work; update after accepted architecture-sensitive changes
@@ -25,6 +25,7 @@ SUBAGENT GUIDANCE:
 - Keep the parent session as orchestrator
 - Use oracle for risky decisions or plan critique
 - Use parallel reviewers for nontrivial diffs
+- When launching child agents, use planner for acceptance; dev-planner is the local persona name
 - Use background scout for broad read-only exploration
 - Prefer the normal persona path for small edits and simple questions
 

@@ -153,10 +153,10 @@ Avoid background workers unless the task is already well specified.
 Use this for larger implementation work:
 
 ```text
-Run a review loop on this change with a max of 3 rounds. Send reviewer findings to dev-planner for acceptance each round, and apply only accepted blocking fixes.
+Run a review loop on this change with a max of 3 rounds. Send reviewer findings to planner for acceptance each round, and apply only accepted blocking fixes.
 ```
 
-Keep the loop capped so local model usage stays predictable. After dev-planner accepts the implementation, update `.pi/architecture.md` or a target split under `.pi/architecture/` if the accepted change altered the current architecture.
+Keep the loop capped so local model usage stays predictable. After planner accepts the implementation, update `.pi/architecture.md` or a target split under `.pi/architecture/` if the accepted change altered the current architecture.
 
 ## When Not To Use Subagents
 

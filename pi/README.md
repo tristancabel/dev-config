@@ -10,7 +10,7 @@
 
 ## Paths
 - Conversation path: use `conversation` for normal questions, internet lookup, source fetching, and concise answers.
-- Dev path: use `dev-planner → builder → reviewer → dev-planner acceptance`; builder fixes accepted blocking findings and repeats review/acceptance up to 3 total loops.
+- Dev path: use `dev-planner → builder → reviewer → planner acceptance`; builder fixes accepted blocking findings and repeats review/acceptance up to 3 total loops. When launching a child agent for acceptance, use `planner`; `dev-planner` is the local persona name.
 - After acceptance, builder updates `.pi/architecture.md` or `.pi/architecture/<target>.md` when the accepted change affects system aim, targets, structure, data flow, principles, invariants, or validation.
 - `/plan approve` marks a plan as ready and keeps useful status metadata, but builder edits are no longer hard-blocked by missing approval.
 - `/path conversation` switches to Q&A and web research.
@@ -59,7 +59,7 @@
 - hard read-only isolation for conversation, scout, and dev-planner
 - persistent project plan at `.pi/plans/active-plan.md`
 - architecture memory at `.pi/architecture.md`, with optional target splits under `.pi/architecture/`
-- guided builder workflow with reviewer plus dev-planner acceptance, capped at 3 loops
+- guided builder workflow with reviewer plus planner acceptance, capped at 3 loops
 - internet research tools for conversation and read-only/review personas
 - explicit web-use policy per persona
 - workflow path switching with `/path`
@@ -121,7 +121,7 @@ Each project can keep durable architecture memory in:
 
 Use the root file for the current system overview: aim, targets, entry points, data flow, design principles, invariants, validation strategy, and known constraints. If a target-specific section starts crowding the overview, split it into one Markdown file per app, library, service, or tool under `.pi/architecture/`.
 
-Architecture memory is current-state documentation, not a changelog. Dev personas read it automatically in the workflow prompt, and builder updates it after dev-planner accepts an architecture-sensitive change.
+Architecture memory is current-state documentation, not a changelog. Dev personas read it automatically in the workflow prompt, and builder updates it after planner acceptance for an architecture-sensitive change.
 
 ## oMLX Server Startup
 Pi starts the local oMLX server automatically on each session start by running:
