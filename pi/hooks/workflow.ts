@@ -17,6 +17,7 @@ PATH COMMANDS:
 - /path conversation → Q&A and web research
 - /path dev → dev-planner-first development workflow
 - /workflow status → show path, persona, plan status, web tools, and builder mode
+- /report [show|save|copy] [branch|all] → extract model, token, prompt, timing, and manual-effort report
 - /architecture status|show|edit|path → inspect or update project architecture memory
 
 SUBAGENT GUIDANCE:

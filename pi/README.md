@@ -23,6 +23,10 @@
 - /path conversation
 - /path dev
 - /workflow status
+- /report
+- /report save
+- /report copy
+- /report all
 - /plan
 - /plan status
 - /plan show
@@ -77,6 +81,7 @@
 - verifier focus and workflow prompts stay aligned with the active worktree
 - project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
 - workflow enforcement through Pi extensions
+- session reporting with model, input/output tokens, prompt detail, elapsed time, and estimated equivalent manual effort via `/report`
 - optional subagent delegation for second opinions, parallel review, chains, and background scouting
 
 ## Subagents
