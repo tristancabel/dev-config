@@ -60,7 +60,7 @@ type ReportOptions = {
 };
 
 const REPORT_OUTPUT_DIR = join(homedir(), ".pi", "agent", "pi-reports");
-const REPORT_COMMANDS = ["show", "save", "copy", "all", "branch"];
+const REPORT_COMMANDS = ["save", "show", "copy", "all", "branch"];
 
 function emptyUsage(): UsageTotals {
 	return {
@@ -476,7 +476,7 @@ function parseReportOptions(args: string): ReportOptions {
 	const tokens = args.trim().split(/\s+/).filter(Boolean).map((token) => token.toLowerCase());
 	return {
 		scope: tokens.includes("all") ? "all" : "branch",
-		destination: tokens.includes("save") ? "save" : tokens.includes("copy") ? "copy" : "show",
+		destination: tokens.includes("show") ? "show" : tokens.includes("copy") ? "copy" : "save",
 	};
 }
 
@@ -513,7 +513,7 @@ export default function reportExtension(pi: ExtensionAPI): void {
 					if (!existsSync(REPORT_OUTPUT_DIR)) mkdirSync(REPORT_OUTPUT_DIR, { recursive: true });
 					const outputPath = join(REPORT_OUTPUT_DIR, reportFilename(ctx));
 					writeFileSync(outputPath, report, "utf-8");
-					ctx.ui.notify(`Report saved: ${outputPath}`, "info");
+					ctx.ui.notify(`Markdown report saved: ${outputPath}`, "info");
 				} catch (error) {
 					const message = error instanceof Error ? error.message : String(error);
 					ctx.ui.notify(`Failed to save report: ${message}`, "error");
