@@ -1014,6 +1014,7 @@ function buildWorkflowSection(
 		"- `/persona` to switch persona",
 		"- `/path conversation|dev` to switch workflow path",
 		"- `/workflow status` to inspect persona, path, plan, tools, and builder mode",
+		"- `/stop` to stop new tool calls; `/stop resume` to allow tools again",
 		"- `/plan` to inspect, create, edit, approve, or remove the active plan",
 		"- `/architecture` to inspect or edit project architecture memory",
 		"- `/effort` to inspect or override reasoning effort",

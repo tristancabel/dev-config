@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
 import { platform, tmpdir } from "node:os";
-import { basename, join, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
 	createBashTool,
 	createEditTool,
@@ -54,12 +54,18 @@ const WORKTREE_STATE_TYPE = "pi-worktree-state";
 const CONTEXT_STATUS_KEY = "pi-context";
 const MEMORY_STATUS_KEY = "pi-memory";
 const WORKTREE_STATUS_KEY = "pi-worktree";
+const STOP_STATUS_KEY = "pi-stop";
 const MEMORY_DIRECTORY = join(".pi", "memory");
 const MEMORY_FILE_NAME = "project-memory.md";
 const PLAN_PATH = join(".pi", "plans", "active-plan.md");
 const CONTEXT_COMMANDS = ["status", "refresh", "compact"];
 const MEMORY_COMMANDS = ["status", "show", "edit", "path", "on", "off"];
 const WORKTREE_COMMANDS = ["status", "create", "use", "off", "path", "list"];
+const STOP_COMMANDS = ["status", "resume"];
+const PATH_PARAM_KEYS = new Set(["path", "file", "filePath", "filename", "targetPath"]);
+const PATH_ARRAY_PARAM_KEYS = new Set(["paths", "files", "filePaths"]);
+const MAX_PATH_SUGGESTIONS = 8;
+const MAX_SUGGESTION_SCAN_DIRS = 2000;
 const LARGE_OUTPUT_THRESHOLD_BYTES = 24 * 1024;
 const LARGE_OUTPUT_PREVIEW_LINES = 160;
 const LARGE_OUTPUT_PREVIEW_BYTES = 12 * 1024;
@@ -144,8 +150,154 @@ function canonicalizeExistingPath(path: string): string {
 	try {
 		return realpathSync(path);
 	} catch {
-		return path;
+		return resolve(path);
 	}
+}
+
+function isPathInside(basePath: string, candidatePath: string): boolean {
+	const rel = relative(canonicalizeExistingPath(basePath), canonicalizeExistingPath(candidatePath));
+	return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function maybeTranslatePathFromRoot(sourceRoot: string, targetRoot: string, candidatePath: string): string | undefined {
+	if (!isPathInside(sourceRoot, candidatePath)) return undefined;
+
+	const rel = relative(canonicalizeExistingPath(sourceRoot), canonicalizeExistingPath(candidatePath));
+	return rel ? join(targetRoot, rel) : targetRoot;
+}
+
+function normalizeToolPath(rawPath: string, ctx: ExtensionContext, activeCwd: string): string {
+	const trimmedPath = rawPath.trim();
+	if (!trimmedPath || trimmedPath.startsWith("~")) return rawPath;
+
+	const repoRoot = findGitRepoRoot(ctx.cwd);
+	const activeRoot = worktreeState.enabled && worktreeState.rootPath ? worktreeState.rootPath : repoRoot;
+
+	if (isAbsolute(trimmedPath)) {
+		if (repoRoot && activeRoot && activeRoot !== repoRoot) {
+			return maybeTranslatePathFromRoot(repoRoot, activeRoot, trimmedPath) ?? trimmedPath;
+		}
+		return trimmedPath;
+	}
+
+	const activeCandidate = resolve(activeCwd, trimmedPath);
+	if (existsSync(activeCandidate)) return trimmedPath;
+
+	if (!repoRoot || !activeRoot) return trimmedPath;
+
+	const rootCandidate = resolve(repoRoot, trimmedPath);
+	const activeRootCandidate = resolve(activeRoot, trimmedPath);
+	if (existsSync(rootCandidate) || existsSync(dirname(activeRootCandidate))) {
+		return relative(activeCwd, activeRootCandidate) || ".";
+	}
+
+	return trimmedPath;
+}
+
+function normalizePathParams(params: unknown, ctx: ExtensionContext, activeCwd: string): unknown {
+	if (!params || typeof params !== "object" || Array.isArray(params)) return params;
+
+	let changed = false;
+	const normalized: Record<string, unknown> = { ...(params as Record<string, unknown>) };
+	for (const [key, value] of Object.entries(normalized)) {
+		if (PATH_PARAM_KEYS.has(key) && typeof value === "string") {
+			const nextValue = normalizeToolPath(value, ctx, activeCwd);
+			if (nextValue === value) continue;
+			normalized[key] = nextValue;
+			changed = true;
+			continue;
+		}
+
+		if (PATH_ARRAY_PARAM_KEYS.has(key) && Array.isArray(value) && value.every((item) => typeof item === "string")) {
+			const nextValue = value.map((item) => normalizeToolPath(item, ctx, activeCwd));
+			if (nextValue.every((item, index) => item === value[index])) continue;
+			normalized[key] = nextValue;
+			changed = true;
+		}
+	}
+
+	return changed ? normalized : params;
+}
+
+function getStringPathParam(params: unknown): string | undefined {
+	if (!params || typeof params !== "object" || Array.isArray(params)) return undefined;
+	const record = params as Record<string, unknown>;
+	for (const key of PATH_PARAM_KEYS) {
+		const value = record[key];
+		if (typeof value === "string" && value.trim()) return value;
+	}
+	return undefined;
+}
+
+function findBasenameMatches(rootPath: string, fileName: string): string[] {
+	const matches: string[] = [];
+	const stack = [rootPath];
+	let scannedDirs = 0;
+
+	while (stack.length > 0 && matches.length < MAX_PATH_SUGGESTIONS && scannedDirs < MAX_SUGGESTION_SCAN_DIRS) {
+		const currentPath = stack.pop();
+		if (!currentPath) continue;
+		scannedDirs++;
+
+		let entries: ReturnType<typeof readdirSync>;
+		try {
+			entries = readdirSync(currentPath, { withFileTypes: true });
+		} catch {
+			continue;
+		}
+
+		for (const entry of entries) {
+			if (entry.name === ".git" || entry.name === "node_modules" || entry.name === ".pi") continue;
+			const entryPath = join(currentPath, entry.name);
+			if (entry.isDirectory()) {
+				stack.push(entryPath);
+				continue;
+			}
+			if (entry.isFile() && entry.name === fileName) {
+				matches.push(entryPath);
+				if (matches.length >= MAX_PATH_SUGGESTIONS) break;
+			}
+		}
+	}
+
+	return matches;
+}
+
+function getMissingPathSuggestionText(requestedPath: string, ctx: ExtensionContext, activeCwd: string): string | undefined {
+	const fileName = basename(requestedPath);
+	if (!fileName || fileName === "." || fileName === "..") return undefined;
+
+	const roots = [...new Set([activeCwd, findGitRepoRoot(ctx.cwd), worktreeState.rootPath].filter((path): path is string => Boolean(path)))];
+	const matches = [...new Set(roots.flatMap((rootPath) => findBasenameMatches(rootPath, fileName)))];
+	if (matches.length === 0) return undefined;
+
+	const displayMatches = matches
+		.slice(0, MAX_PATH_SUGGESTIONS)
+		.map((match) => `- ${getRelativeDisplayPath(activeCwd, match)}`)
+		.join("\n");
+	return `\n\nPossible matches for \`${fileName}\` from the active tool cwd:\n${displayMatches}\n\nUse one of those paths, or run find/grep before retrying.`;
+}
+
+function appendTextToToolResult(result: unknown, extraText: string): unknown {
+	if (!result || typeof result !== "object") return result;
+	const record = result as { content?: unknown };
+	if (!Array.isArray(record.content)) return result;
+
+	const content = record.content as Array<{ type?: unknown; text?: unknown }>;
+	const firstText = content.find((block) => block.type === "text" && typeof block.text === "string");
+	if (!firstText) return result;
+
+	firstText.text = `${firstText.text}${extraText}`;
+	return result;
+}
+
+async function addMissingPathSuggestions(result: unknown, params: unknown, ctx: ExtensionContext, activeCwd: string): Promise<unknown> {
+	if (!result || typeof result !== "object" || (result as { isError?: unknown }).isError !== true) return result;
+	const requestedPath = getStringPathParam(params);
+	if (!requestedPath) return result;
+
+	const suggestionText = getMissingPathSuggestionText(requestedPath, ctx, activeCwd);
+	return suggestionText ? appendTextToToolResult(result, suggestionText) : result;
 }
 
 function getHostPlatformLabel(): string {
@@ -168,6 +320,18 @@ function buildPlatformPromptSection(): string {
 		"- `sed -i`, `stat`, `du`, `df`, and `readlink` behave differently than on Linux",
 		"- Prefer Pi's read/edit/write tools for file changes instead of shell mutation one-liners",
 		"- macOS-safe inspection commands such as `sw_vers`, `mdfind`, `mdls`, `plutil`, and read-only `brew info|list|search` commands may be available",
+	].join("\n");
+}
+
+function buildPathPromptSection(cwd: string, activeCwd: string): string {
+	const repoRoot = findGitRepoRoot(cwd) ?? cwd;
+	return [
+		"## File Path Rules",
+		`Repository root: \`${getRelativeDisplayPath(cwd, repoRoot)}\``,
+		`Active tool cwd: \`${getRelativeDisplayPath(cwd, activeCwd)}\``,
+		"- Prefer paths copied from `ls`, `find`, `grep`, or `git status` output.",
+		"- Before reading or editing a file after a path error, run `pwd` and `ls` or `find` to confirm the path from the active tool cwd.",
+		"- If the user says stop, pause work immediately and do not call tools again until they ask to continue.",
 	].join("\n");
 }
 
@@ -430,6 +594,7 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 	const sectionCache = createSectionCache();
 	let memoryEnabled = true;
 	let worktreeState: WorktreeState = { enabled: false };
+	let agentStopped = false;
 	let warnedHighContext = false;
 	let warnedSensitiveMemory = false;
 
@@ -470,6 +635,8 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		} else {
 			ctx.ui.setStatus(WORKTREE_STATUS_KEY, ctx.ui.theme.fg("dim", "wt:main"));
 		}
+
+		ctx.ui.setStatus(STOP_STATUS_KEY, ctx.ui.theme.fg(agentStopped ? "warning" : "dim", agentStopped ? "stop:on" : "stop:off"));
 	}
 
 	function maybeWarnAboutContext(ctx: ExtensionContext): void {
@@ -787,6 +954,27 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 
 	}
 
+	async function handleStopCommand(args: string, ctx: ExtensionContext): Promise<void> {
+		const action = args.trim().toLowerCase() || "stop";
+
+		if (action === "status") {
+			ctx.ui.notify(agentStopped ? "Stop is active; agent tools are blocked until /stop resume." : "Stop is not active.", "info");
+			return;
+		}
+
+		if (action === "resume") {
+			agentStopped = false;
+			updateStatus(ctx);
+			ctx.ui.notify("Agent resumed. Tool calls are enabled again.", "success");
+			return;
+		}
+
+		agentStopped = true;
+		pi.setActiveTools([]);
+		updateStatus(ctx);
+		ctx.ui.notify("Agent stopped. New tool calls are blocked until /stop resume.", "warning");
+	}
+
 	function getContextCommandCompletions(prefix: string) {
 		return CONTEXT_COMMANDS.filter((command) => command.startsWith(prefix)).map((command) => ({
 			value: command,
@@ -811,6 +999,29 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		}
 
 		return null;
+	}
+
+	function getStopCommandCompletions(prefix: string) {
+		return STOP_COMMANDS.filter((command) => command.startsWith(prefix)).map((command) => ({
+			value: command,
+			label: command,
+		}));
+	}
+
+	function getToolParams<T>(params: T, ctx: ExtensionContext): { activeCwd: string; params: T } {
+		const activeCwd = getActiveToolCwd(ctx);
+		return { activeCwd, params: normalizePathParams(params, ctx, activeCwd) as T };
+	}
+
+	function getStoppedToolResult(toolName: string) {
+		return {
+			content: [
+				{
+					type: "text" as const,
+					text: `Stopped by user. The ${toolName} tool is blocked until /stop resume.`,
+				},
+			],
+		};
 	}
 
 	async function persistLargeBashOutput(ctx: ExtensionContext, toolCallId: string, text: string, fullOutputPath?: string): Promise<string | undefined> {
@@ -858,13 +1069,24 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerCommand("stop", {
+		description: "Stop the agent from using tools until resumed",
+		getArgumentCompletions: (prefix) => getStopCommandCompletions(prefix),
+		handler: async (args, ctx) => {
+			await handleStopCommand(args, ctx);
+		},
+	});
+
 	pi.registerTool({
 		name: "read",
 		label: "read",
 		description: bootstrapTools.read.description,
 		parameters: bootstrapTools.read.parameters,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return getBuiltInTools(getActiveToolCwd(ctx)).read.execute(toolCallId, params, signal, onUpdate);
+			if (agentStopped) return getStoppedToolResult("read");
+			const scoped = getToolParams(params, ctx);
+			const result = await getBuiltInTools(scoped.activeCwd).read.execute(toolCallId, scoped.params, signal, onUpdate);
+			return addMissingPathSuggestions(result, scoped.params, ctx, scoped.activeCwd);
 		},
 	});
 
@@ -874,7 +1096,9 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		description: bootstrapTools.bash.description,
 		parameters: bootstrapTools.bash.parameters,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return getBuiltInTools(getActiveToolCwd(ctx)).bash.execute(toolCallId, params, signal, onUpdate);
+			if (agentStopped) return getStoppedToolResult("bash");
+			const activeCwd = getActiveToolCwd(ctx);
+			return getBuiltInTools(activeCwd).bash.execute(toolCallId, params, signal, onUpdate);
 		},
 	});
 
@@ -884,7 +1108,10 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		description: bootstrapTools.edit.description,
 		parameters: bootstrapTools.edit.parameters,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return getBuiltInTools(getActiveToolCwd(ctx)).edit.execute(toolCallId, params, signal, onUpdate);
+			if (agentStopped) return getStoppedToolResult("edit");
+			const scoped = getToolParams(params, ctx);
+			const result = await getBuiltInTools(scoped.activeCwd).edit.execute(toolCallId, scoped.params, signal, onUpdate);
+			return addMissingPathSuggestions(result, scoped.params, ctx, scoped.activeCwd);
 		},
 	});
 
@@ -894,7 +1121,10 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		description: bootstrapTools.write.description,
 		parameters: bootstrapTools.write.parameters,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return getBuiltInTools(getActiveToolCwd(ctx)).write.execute(toolCallId, params, signal, onUpdate);
+			if (agentStopped) return getStoppedToolResult("write");
+			const scoped = getToolParams(params, ctx);
+			const result = await getBuiltInTools(scoped.activeCwd).write.execute(toolCallId, scoped.params, signal, onUpdate);
+			return addMissingPathSuggestions(result, scoped.params, ctx, scoped.activeCwd);
 		},
 	});
 
@@ -904,7 +1134,9 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		description: bootstrapTools.grep.description,
 		parameters: bootstrapTools.grep.parameters,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return getBuiltInTools(getActiveToolCwd(ctx)).grep.execute(toolCallId, params, signal, onUpdate);
+			if (agentStopped) return getStoppedToolResult("grep");
+			const scoped = getToolParams(params, ctx);
+			return getBuiltInTools(scoped.activeCwd).grep.execute(toolCallId, scoped.params, signal, onUpdate);
 		},
 	});
 
@@ -914,7 +1146,9 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		description: bootstrapTools.find.description,
 		parameters: bootstrapTools.find.parameters,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return getBuiltInTools(getActiveToolCwd(ctx)).find.execute(toolCallId, params, signal, onUpdate);
+			if (agentStopped) return getStoppedToolResult("find");
+			const scoped = getToolParams(params, ctx);
+			return getBuiltInTools(scoped.activeCwd).find.execute(toolCallId, scoped.params, signal, onUpdate);
 		},
 	});
 
@@ -924,13 +1158,16 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		description: bootstrapTools.ls.description,
 		parameters: bootstrapTools.ls.parameters,
 		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			return getBuiltInTools(getActiveToolCwd(ctx)).ls.execute(toolCallId, params, signal, onUpdate);
+			if (agentStopped) return getStoppedToolResult("ls");
+			const scoped = getToolParams(params, ctx);
+			return getBuiltInTools(scoped.activeCwd).ls.execute(toolCallId, scoped.params, signal, onUpdate);
 		},
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
 		memoryEnabled = getLatestCustomEntryData<MemoryState>(ctx, MEMORY_STATE_TYPE)?.enabled ?? true;
 		worktreeState = getLatestCustomEntryData<WorktreeState>(ctx, WORKTREE_STATE_TYPE) ?? { enabled: false };
+		agentStopped = false;
 		clearPromptState();
 		warnedHighContext = false;
 		warnedSensitiveMemory = false;
@@ -945,11 +1182,25 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		maybeWarnAboutSensitiveMemory(ctx);
 	});
 
+	pi.on("tool_call", async (event) => {
+		if (!agentStopped) return;
+		return {
+			block: true,
+			reason: `Stopped by user. The ${event.toolName} tool is blocked until /stop resume.`,
+		};
+	});
+
 	pi.on("before_agent_start", async (event, ctx) => {
 		updateStatus(ctx);
 		maybeWarnAboutSensitiveMemory(ctx);
 
-		const sections = [buildPlatformPromptSection(), getWorktreePromptSection(ctx), getMemoryPromptSection(ctx)].filter(
+		const sections = [
+			buildPlatformPromptSection(),
+			buildPathPromptSection(ctx.cwd, getActiveToolCwd(ctx)),
+			getWorktreePromptSection(ctx),
+			getMemoryPromptSection(ctx),
+			agentStopped ? "## Stop State\nThe user has stopped the agent. Do not call tools. Ask for `/stop resume` before continuing work." : "",
+		].filter(
 			(section) => section.trim().length > 0,
 		);
 		if (sections.length === 0) return;

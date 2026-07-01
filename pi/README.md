@@ -23,6 +23,9 @@
 - /path conversation
 - /path dev
 - /workflow status
+- /stop
+- /stop status
+- /stop resume
 - /report
 - /report show
 - /report save
@@ -80,6 +83,9 @@
 - project memory at `.pi/memory/project-memory.md`, with per-session opt-out
 - optional worktree-routed execution for risky edits and verification, stored under the host system temp directory
 - verifier focus and workflow prompts stay aligned with the active worktree
+- `/stop` blocks new tool calls until `/stop resume`
+- file-tool path normalization maps obvious repo-root-relative paths into the active cwd/worktree
+- failed file reads/edits include basename matches when the requested path appears to be in the wrong directory
 - project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
 - workflow enforcement through Pi extensions
 - session reporting with model, input/output tokens, prompt detail, elapsed time, and estimated equivalent manual effort; `/report` saves a Markdown file by default

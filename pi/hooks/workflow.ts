@@ -17,8 +17,22 @@ PATH COMMANDS:
 - /path conversation → Q&A and web research
 - /path dev → dev-planner-first development workflow
 - /workflow status → show path, persona, plan status, web tools, and builder mode
+- /stop → stop new agent tool calls; /stop resume → allow tools again
 - /report [save|show|copy] [branch|all] → save a Markdown report by default; show/copy are explicit alternatives
 - /architecture status|show|edit|path → inspect or update project architecture memory
+
+STOPPING:
+
+- If the user says stop, pause immediately, do not call more tools, and wait for new instructions
+- Use /stop for a hard stop of new tool calls; resume only after /stop resume or an explicit continue request
+
+PATH HANDLING:
+
+- File tools run from the active tool cwd, which may be a nested directory or an isolated worktree
+- Prefer paths discovered from pwd, ls, find, grep, or git status output
+- After a bad-path error, use any suggested matching paths from the tool result before retrying
+- If no suggestion appears, check pwd and list the parent directory before retrying
+- In worktree mode, keep reads, writes, searches, and bash commands in the active worktree unless the user asks otherwise
 
 SUBAGENT GUIDANCE:
 
