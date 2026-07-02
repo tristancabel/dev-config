@@ -56,6 +56,25 @@
 ;; yes or no as y-or-n
 (fset 'yes-or-no-p 'y-or-n-p)
 
+;; Replace selected text when typing, like standard desktop editors.
+(delete-selection-mode 1)
+
+;; Use normal macOS clipboard shortcuts in GUI Emacs.
+(when (eq system-type 'darwin)
+  (setq mac-command-modifier 'super)
+  (setq ns-command-modifier 'super)
+  (setq mac-option-modifier 'meta)
+  (setq ns-option-modifier 'meta)
+  (setq select-enable-clipboard t)
+  (setq save-interprogram-paste-before-kill t)
+  (global-set-key (kbd "s-x") #'kill-region)
+  (global-set-key (kbd "s-c") #'kill-ring-save)
+  (global-set-key (kbd "s-v") #'yank)
+  (global-set-key (kbd "s-a") #'mark-whole-buffer)
+  (global-set-key (kbd "s-s") #'save-buffer)
+  (global-set-key (kbd "s-f") #'isearch-forward)
+  (global-set-key (kbd "s-z") #'undo-tree-visualize))
+
 ;; save desktop mode
 (desktop-save-mode 1)
 

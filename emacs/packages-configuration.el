@@ -40,7 +40,7 @@
 ;; ;;;;;;;;;;;;;;;;;;;;
 (use-package browse-kill-ring
   :ensure t
-  :bind (("M-y" . brosw-kill-ring)))
+  :bind (("M-y" . browse-kill-ring)))
 
 ;; beacon
 ;; highlight cursor after window moves
