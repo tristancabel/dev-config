@@ -166,7 +166,7 @@ function maybeTranslatePathFromRoot(sourceRoot: string, targetRoot: string, cand
 	return rel ? join(targetRoot, rel) : targetRoot;
 }
 
-function normalizeToolPath(rawPath: string, ctx: ExtensionContext, activeCwd: string): string {
+function normalizeToolPath(rawPath: string, ctx: ExtensionContext, activeCwd: string, worktreeState: WorktreeState): string {
 	const trimmedPath = rawPath.trim();
 	if (!trimmedPath || trimmedPath.startsWith("~")) return rawPath;
 
@@ -194,14 +194,14 @@ function normalizeToolPath(rawPath: string, ctx: ExtensionContext, activeCwd: st
 	return trimmedPath;
 }
 
-function normalizePathParams(params: unknown, ctx: ExtensionContext, activeCwd: string): unknown {
+function normalizePathParams(params: unknown, ctx: ExtensionContext, activeCwd: string, worktreeState: WorktreeState): unknown {
 	if (!params || typeof params !== "object" || Array.isArray(params)) return params;
 
 	let changed = false;
 	const normalized: Record<string, unknown> = { ...(params as Record<string, unknown>) };
 	for (const [key, value] of Object.entries(normalized)) {
 		if (PATH_PARAM_KEYS.has(key) && typeof value === "string") {
-			const nextValue = normalizeToolPath(value, ctx, activeCwd);
+			const nextValue = normalizeToolPath(value, ctx, activeCwd, worktreeState);
 			if (nextValue === value) continue;
 			normalized[key] = nextValue;
 			changed = true;
@@ -209,7 +209,7 @@ function normalizePathParams(params: unknown, ctx: ExtensionContext, activeCwd: 
 		}
 
 		if (PATH_ARRAY_PARAM_KEYS.has(key) && Array.isArray(value) && value.every((item) => typeof item === "string")) {
-			const nextValue = value.map((item) => normalizeToolPath(item, ctx, activeCwd));
+			const nextValue = value.map((item) => normalizeToolPath(item, ctx, activeCwd, worktreeState));
 			if (nextValue.every((item, index) => item === value[index])) continue;
 			normalized[key] = nextValue;
 			changed = true;
@@ -263,7 +263,12 @@ function findBasenameMatches(rootPath: string, fileName: string): string[] {
 	return matches;
 }
 
-function getMissingPathSuggestionText(requestedPath: string, ctx: ExtensionContext, activeCwd: string): string | undefined {
+function getMissingPathSuggestionText(
+	requestedPath: string,
+	ctx: ExtensionContext,
+	activeCwd: string,
+	worktreeState: WorktreeState,
+): string | undefined {
 	const fileName = basename(requestedPath);
 	if (!fileName || fileName === "." || fileName === "..") return undefined;
 
@@ -291,12 +296,18 @@ function appendTextToToolResult(result: unknown, extraText: string): unknown {
 	return result;
 }
 
-async function addMissingPathSuggestions(result: unknown, params: unknown, ctx: ExtensionContext, activeCwd: string): Promise<unknown> {
+async function addMissingPathSuggestions(
+	result: unknown,
+	params: unknown,
+	ctx: ExtensionContext,
+	activeCwd: string,
+	worktreeState: WorktreeState,
+): Promise<unknown> {
 	if (!result || typeof result !== "object" || (result as { isError?: unknown }).isError !== true) return result;
 	const requestedPath = getStringPathParam(params);
 	if (!requestedPath) return result;
 
-	const suggestionText = getMissingPathSuggestionText(requestedPath, ctx, activeCwd);
+	const suggestionText = getMissingPathSuggestionText(requestedPath, ctx, activeCwd, worktreeState);
 	return suggestionText ? appendTextToToolResult(result, suggestionText) : result;
 }
 
@@ -1010,7 +1021,7 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 
 	function getToolParams<T>(params: T, ctx: ExtensionContext): { activeCwd: string; params: T } {
 		const activeCwd = getActiveToolCwd(ctx);
-		return { activeCwd, params: normalizePathParams(params, ctx, activeCwd) as T };
+		return { activeCwd, params: normalizePathParams(params, ctx, activeCwd, worktreeState) as T };
 	}
 
 	function getStoppedToolResult(toolName: string) {
@@ -1086,7 +1097,7 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 			if (agentStopped) return getStoppedToolResult("read");
 			const scoped = getToolParams(params, ctx);
 			const result = await getBuiltInTools(scoped.activeCwd).read.execute(toolCallId, scoped.params, signal, onUpdate);
-			return addMissingPathSuggestions(result, scoped.params, ctx, scoped.activeCwd);
+			return addMissingPathSuggestions(result, scoped.params, ctx, scoped.activeCwd, worktreeState);
 		},
 	});
 
@@ -1111,7 +1122,7 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 			if (agentStopped) return getStoppedToolResult("edit");
 			const scoped = getToolParams(params, ctx);
 			const result = await getBuiltInTools(scoped.activeCwd).edit.execute(toolCallId, scoped.params, signal, onUpdate);
-			return addMissingPathSuggestions(result, scoped.params, ctx, scoped.activeCwd);
+			return addMissingPathSuggestions(result, scoped.params, ctx, scoped.activeCwd, worktreeState);
 		},
 	});
 
@@ -1124,7 +1135,7 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 			if (agentStopped) return getStoppedToolResult("write");
 			const scoped = getToolParams(params, ctx);
 			const result = await getBuiltInTools(scoped.activeCwd).write.execute(toolCallId, scoped.params, signal, onUpdate);
-			return addMissingPathSuggestions(result, scoped.params, ctx, scoped.activeCwd);
+			return addMissingPathSuggestions(result, scoped.params, ctx, scoped.activeCwd, worktreeState);
 		},
 	});
 
