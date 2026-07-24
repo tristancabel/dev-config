@@ -33,6 +33,7 @@ In Emacs:
 - `C-c P` launches Pi quickly.
 - `C-u M-x my/pi-agent` resumes the last Pi session.
 - `C-c p P` does the same from the Projectile project map.
+- In the Pi buffer, `s-v`/`C-y` paste clipboard text and `C-<return>` inserts a newline without submitting.
 
 Project-specific instructions for Pi live in `AGENTS.md`.
 

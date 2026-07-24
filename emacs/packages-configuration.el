@@ -487,13 +487,51 @@ CONTINUE-LAST-SESSION controls whether Pi should resume the previous session."
   (when (boundp 'eat-scroll-to-bottom-on-input)
     (setq-local eat-scroll-to-bottom-on-input t)))
 
+(defun my/pi-agent--send-string (string)
+  "Send STRING to the current Pi terminal process."
+  (if-let ((process (get-buffer-process (current-buffer))))
+      (process-send-string process string)
+    (user-error "No Pi terminal process in this buffer")))
+
+(defun my/pi-agent-paste ()
+  "Paste clipboard text into Pi's terminal editor."
+  (interactive)
+  (let ((text (current-kill 0 t)))
+    (unless text
+      (user-error "Clipboard is empty"))
+    (my/pi-agent--send-string (concat "\e[200~" text "\e[201~"))))
+
+(defun my/pi-agent-newline ()
+  "Insert a new line in Pi's terminal editor without submitting."
+  (interactive)
+  (my/pi-agent--send-string "\n"))
+
+(defvar my/pi-agent-terminal-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "s-v") #'my/pi-agent-paste)
+    (define-key map (kbd "C-y") #'my/pi-agent-paste)
+    (define-key map [remap yank] #'my/pi-agent-paste)
+    (define-key map (kbd "C-<return>") #'my/pi-agent-newline)
+    map)
+  "Keymap for Pi terminal buffers.")
+
+(define-minor-mode my/pi-agent-terminal-mode
+  "Minor mode for Pi terminal input conveniences."
+  :lighter " Pi"
+  :keymap my/pi-agent-terminal-mode-map)
+
+(defun my/pi-agent--configure-terminal-buffer ()
+  "Configure terminal-local behavior for a Pi buffer."
+  (my/pi-agent--enable-follow-output)
+  (my/pi-agent-terminal-mode 1))
+
 (defun my/pi-agent--start-in-eat (command)
   "Start Pi using Eat with COMMAND."
   (let ((current-prefix-arg '(4)))
     (call-interactively #'eat))
   (let ((buffer (current-buffer)))
     (rename-buffer "*pi*" t)
-    (my/pi-agent--enable-follow-output)
+    (my/pi-agent--configure-terminal-buffer)
     (when (fboundp 'eat-char-mode)
       (eat-char-mode))
     (when-let ((process (get-buffer-process buffer)))
@@ -506,7 +544,7 @@ CONTINUE-LAST-SESSION controls whether Pi should resume the previous session."
          (term-buffer (ansi-term shell "pi")))
     (with-current-buffer term-buffer
       (rename-buffer "*pi*" t)
-      (my/pi-agent--enable-follow-output)
+      (my/pi-agent--configure-terminal-buffer)
       (term-char-mode)
       (term-send-raw-string (concat command "\n")))
     (my/pi-agent--pop-to-bottom term-buffer)))
@@ -531,7 +569,10 @@ With prefix argument CONTINUE-LAST-SESSION, resume the last Pi session."
     (setq command (my/pi-agent--command continue-last-session))
     (let ((buffer (get-buffer buffer-name)))
       (if (and buffer (get-buffer-process buffer))
-          (my/pi-agent--pop-to-bottom buffer)
+          (progn
+            (with-current-buffer buffer
+              (my/pi-agent--configure-terminal-buffer))
+            (my/pi-agent--pop-to-bottom buffer))
         (when buffer
           (kill-buffer buffer))
         (cond
