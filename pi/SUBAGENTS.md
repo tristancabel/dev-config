@@ -1,6 +1,6 @@
 # Pi Subagents
 
-This setup installs `pi-subagents` as an optional orchestration layer on top of the existing persona workflow.
+This setup installs `pi-subagents` as an orchestration layer on top of the existing persona workflow.
 
 Use the normal profiles for everyday work:
 
@@ -10,7 +10,9 @@ Use the normal profiles for everyday work:
 - `builder` for focused edits
 - `reviewer` and `verifier` for checks
 
-Use subagents when a task benefits from another focused Pi session: second opinions, parallel review, background scouting, review loops, or a clean fresh-context pass.
+Builder delegation is on by default. Use `/builder off` to keep implementation in the parent builder session, and `/builder on` to restore delegated builder behavior.
+
+Use subagents when a task benefits from another focused Pi session: long builder work, second opinions, parallel review, background scouting, review loops, or a clean fresh-context pass.
 
 ## Installation
 
@@ -34,6 +36,25 @@ The current Pi session is the parent. A subagent is a child Pi session with a fo
 
 Subagents do not replace the local persona workflow. The parent should still decide the path, keep user-facing context coherent, and synthesize results. Children are best used as bounded specialists.
 
+With builder delegation on, the parent builder session acts as the orchestrator for long, multi-file, exploratory, risky, architecture-sensitive, or high-context implementation tasks. The child agent burns context privately; the parent receives only compact durable results.
+
+Task capsules sent to child agents should include only:
+
+- goal
+- relevant paths
+- constraints
+- active plan excerpt
+- expected output
+- validation commands
+
+Child agents should return only:
+
+- files changed
+- concise summary
+- validation evidence
+- unresolved risks
+- blocking questions
+
 Good default pattern:
 
 ```text
@@ -41,6 +62,8 @@ clarify -> plan -> implement -> fresh review -> planner acceptance -> architectu
 ```
 
 Use subagents sparingly with the local oMLX model. Parallel runs can multiply model load quickly.
+
+Do not use parallel editing workers. Parallel child agents are for read-only scouting or review angles.
 
 ## First Commands
 
@@ -72,6 +95,14 @@ Run implementation plus review:
 
 ```text
 Have worker implement this approved plan. Afterward, run reviewer and summarize only the fixes worth applying.
+```
+
+Toggle builder delegation:
+
+```text
+/builder status
+/builder on
+/builder off
 ```
 
 ## Slash Commands
@@ -157,6 +188,16 @@ Run a review loop on this change with a max of 3 rounds. Send reviewer findings 
 ```
 
 Keep the loop capped so local model usage stays predictable. After planner accepts the implementation, update `.pi/architecture.md` or a target split under `.pi/architecture/` if the accepted change altered the current architecture.
+
+### Delegated Builder
+
+Use this for long implementation work that would otherwise saturate the parent context:
+
+```text
+Builder delegation is on. Give worker a compact task capsule for the approved plan, then run reviewer and planner acceptance. Keep only summaries and validation evidence in the parent context.
+```
+
+The parent should integrate results, resolve blocking questions, and report completion only after review and planner acceptance.
 
 ## When Not To Use Subagents
 

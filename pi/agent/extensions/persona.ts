@@ -9,6 +9,7 @@ import { type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-codin
 type PermissionMode = "read-only" | "edit-allowed" | "review-runner";
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 type EffortMode = "auto" | ThinkingLevel;
+type BuilderDelegationMode = "on" | "off";
 type VerificationPrimary = "frontend" | "backend" | "cli" | "config" | "general";
 type VerificationModifier = "refactor" | "bug-fix";
 
@@ -96,15 +97,22 @@ type WorktreeState = {
 	name?: string;
 };
 
+type BuilderDelegationState = {
+	mode?: BuilderDelegationMode;
+};
+
 const PROFILE_STATE_TYPE = "pi-profile-state";
 const EFFORT_STATE_TYPE = "pi-effort-state";
 const WORKTREE_STATE_TYPE = "pi-worktree-state";
+const BUILDER_DELEGATION_STATE_TYPE = "pi-builder-delegation-state";
 const DEFAULT_PROFILE = "conversation";
+const DEFAULT_BUILDER_DELEGATION_MODE: BuilderDelegationMode = "on";
 const PERSONA_STATUS_KEY = "pi-persona";
 const PATH_STATUS_KEY = "pi-path";
 const PLAN_STATUS_KEY = "pi-plan";
 const EFFORT_STATUS_KEY = "pi-effort";
 const VERIFY_STATUS_KEY = "pi-verify";
+const BUILDER_DELEGATION_STATUS_KEY = "pi-builder-delegation";
 const PLAN_DIRECTORY = join(".pi", "plans");
 const PLAN_FILE_NAME = "active-plan.md";
 const ARCHITECTURE_FILE_NAME = "architecture.md";
@@ -114,6 +122,7 @@ const PLAN_COMMANDS = ["status", "show", "approve", "draft", "edit", "new", "rem
 const ARCHITECTURE_COMMANDS = ["status", "show", "edit", "path"];
 const PATH_COMMANDS = ["status", "conversation", "dev"];
 const WORKFLOW_COMMANDS = ["status"];
+const BUILDER_COMMAND_COMPLETIONS = ["status", "on", "off", "delegation status", "delegation on", "delegation off"];
 const EFFORT_LEVELS: EffortMode[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"];
 const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
 const DEFAULT_PERSONA_PRIORITY = ["conversation", "dev-planner", "scout", "builder", "reviewer", "verifier"];
@@ -137,6 +146,26 @@ const CLI_TEXT_PATTERN = /\b(cli|command line|subcommand|flag|argument|stdin|std
 const CONFIG_TEXT_PATTERN = /\b(config|configuration|settings|toml|yaml|json|cmake|env file|workflow)\b/i;
 const REFACTOR_TEXT_PATTERN = /\b(refactor|rename|cleanup|extract|reorganize|mechanical|no behavior change)\b/i;
 const BUG_FIX_TEXT_PATTERN = /\b(fix|bug|regression|issue|crash|error|incorrect|broken|failure)\b/i;
+const AUTO_SWITCH_PROFILE_PRIORITY = ["verifier", "reviewer", "builder", "dev-planner", "scout", "conversation"];
+const AUTO_SWITCH_BASE_SCORES: Record<string, number> = {
+	builder: 100,
+	verifier: 95,
+	reviewer: 90,
+	"dev-planner": 80,
+	scout: 70,
+	conversation: 60,
+};
+const AUTO_SWITCH_INTENT_RULES: Array<{ profile: string; pattern: RegExp; score: number }> = [
+	{ profile: "builder", pattern: /\b(implement|execute|apply|do|carry\s+out|code|build)\s+(the\s+)?(approved\s+|active\s+|draft\s+)?plan\b/i, score: 150 },
+	{ profile: "builder", pattern: /\b(start|continue|do)\s+(the\s+)?implementation\b/i, score: 135 },
+	{ profile: "builder", pattern: /\b(make|apply|implement)\s+(the\s+)?changes?\b/i, score: 130 },
+	{ profile: "dev-planner", pattern: /\b(implementation|migration|refactor|test)\s+plan\b/i, score: 145 },
+	{ profile: "dev-planner", pattern: /\b(plan|design|outline|propose)\s+(an?\s+)?(implementation|approach|strategy)\b/i, score: 140 },
+	{ profile: "dev-planner", pattern: /\b(plan|design|approach|strategy)\s+(to|for|how\s+to)\s+(implement|fix|change|refactor|build|add)\b/i, score: 140 },
+	{ profile: "reviewer", pattern: /\b(review|audit|check)\s+(the\s+)?(diff|changes?|implementation|code|pr)\b/i, score: 135 },
+	{ profile: "verifier", pattern: /\b(verify|validate|test)\s+(the\s+)?(changes?|fix|implementation)\b/i, score: 135 },
+	{ profile: "scout", pattern: /\b(map|trace|explore|inspect|understand)\s+(the\s+)?(code|codebase|flow|architecture|module|repo)\b/i, score: 125 },
+];
 
 const READ_ONLY_SAFE_PATTERNS = [
 	/^\s*cat\b/i,
@@ -255,6 +284,13 @@ function normalizeThinkingLevel(value: string | undefined): ThinkingLevel | unde
 function normalizeEffortMode(value: string | undefined): EffortMode | undefined {
 	if (!value) return undefined;
 	return EFFORT_LEVELS.includes(value as EffortMode) ? (value as EffortMode) : undefined;
+}
+
+function normalizeBuilderDelegationMode(value: string | undefined): BuilderDelegationMode | undefined {
+	if (!value) return undefined;
+	const normalized = value.trim().toLowerCase();
+	if (normalized === "on" || normalized === "off") return normalized;
+	return undefined;
 }
 
 function parseModelRef(ref: string | undefined): { provider?: string; model?: string } {
@@ -590,6 +626,10 @@ function getWorkflowArgumentCompletions(prefix: string) {
 	return WORKFLOW_COMMANDS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
 }
 
+function getBuilderArgumentCompletions(prefix: string) {
+	return BUILDER_COMMAND_COMPLETIONS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
+}
+
 function getEffortArgumentCompletions(prefix: string) {
 	return EFFORT_LEVELS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
 }
@@ -655,6 +695,30 @@ function getGuardrailMatch(rules: GuardrailRule[] | undefined, command: string):
 	return rules?.find((rule) => matchesRule(rule, command));
 }
 
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchesAutoSwitchKeyword(input: string, keyword: string): boolean {
+	const normalizedKeyword = keyword.trim().toLowerCase();
+	if (!normalizedKeyword) return false;
+
+	const pattern = escapeRegExp(normalizedKeyword).replace(/\s+/g, "\\s+");
+	return new RegExp(`\\b${pattern}\\b`, "i").test(input);
+}
+
+function getAutoSwitchPriority(profileName: string): number {
+	const index = AUTO_SWITCH_PROFILE_PRIORITY.indexOf(profileName);
+	return index === -1 ? AUTO_SWITCH_PROFILE_PRIORITY.length : index;
+}
+
+function getAutoSwitchKeywordScore(profileName: string, keyword: string): number {
+	const baseScore = AUTO_SWITCH_BASE_SCORES[profileName] ?? 50;
+	const phraseBonus = keyword.trim().includes(" ") ? 12 : 0;
+	const lengthBonus = Math.min(keyword.trim().length, 20) / 10;
+	return baseScore + phraseBonus + lengthBonus;
+}
+
 function isSafeReadOnlyCommand(command: string): boolean {
 	return READ_ONLY_SAFE_PATTERNS.some((pattern) => pattern.test(command));
 }
@@ -684,15 +748,31 @@ function suggestProfile(loadedProfiles: LoadedProfiles, input: string): string |
 	const normalized = input.trim().toLowerCase();
 	if (normalized.length < 4 || normalized.startsWith("/")) return undefined;
 
-	for (const profileName of getProfileOrder(loadedProfiles)) {
-		const profile = loadedProfiles.profiles[profileName];
-		if (!profile?.autoSwitch?.length) continue;
-		if (profile.autoSwitch.some((keyword) => normalized.includes(keyword.toLowerCase()))) {
-			return profileName;
+	const scores = new Map<string, number>();
+
+	for (const rule of AUTO_SWITCH_INTENT_RULES) {
+		if (!getProfile(loadedProfiles, rule.profile)) continue;
+		if (rule.pattern.test(normalized)) {
+			scores.set(rule.profile, Math.max(scores.get(rule.profile) ?? 0, rule.score));
 		}
 	}
 
-	return undefined;
+	for (const profileName of getProfileNames(loadedProfiles)) {
+		const profile = loadedProfiles.profiles[profileName];
+		if (!profile?.autoSwitch?.length) continue;
+
+		for (const keyword of profile.autoSwitch) {
+			if (!matchesAutoSwitchKeyword(normalized, keyword)) continue;
+			const score = getAutoSwitchKeywordScore(profileName, keyword);
+			scores.set(profileName, Math.max(scores.get(profileName) ?? 0, score));
+		}
+	}
+
+	return [...scores.entries()]
+		.sort(([leftProfile, leftScore], [rightProfile, rightScore]) => {
+			if (leftScore !== rightScore) return rightScore - leftScore;
+			return getAutoSwitchPriority(leftProfile) - getAutoSwitchPriority(rightProfile);
+		})[0]?.[0];
 }
 
 function parseGitStatusPath(line: string): string | undefined {
@@ -911,6 +991,28 @@ function buildVerificationSection(context: VerificationContext): string {
 	return lines.join("\n");
 }
 
+function buildBuilderDelegationSection(mode: BuilderDelegationMode): string {
+	if (mode === "off") {
+		return [
+			"Builder delegation: OFF",
+			"- Implement directly in the parent builder session.",
+			"- You may still use reviewer and planner child agents for the required review and acceptance workflow.",
+			"- Keep context compact manually: avoid large file dumps, summarize tool output, and run `/context compact` when needed.",
+		].join("\n");
+	}
+
+	return [
+		"Builder delegation: ON",
+		"- Default to keeping the parent builder session as the orchestrator for long or context-heavy coding work.",
+		"- Delegate bounded work to child agents when the task is multi-file, architecture-sensitive, exploratory, risky, based on a multi-step plan, likely to create large tool output, or context usage is already high.",
+		"- Prefer scout/planner child agents for focused exploration or plan shaping, one worker child agent for implementation, reviewer for fresh review, and planner for acceptance.",
+		"- Do not use parallel editing workers. Parallel child agents are for read-only scouting or review angles.",
+		"- Send child agents a compact task capsule: goal, relevant paths, constraints, plan excerpt, expected output, and validation commands.",
+		"- Ask children to return only files changed, concise summary, validation evidence, unresolved risks, and blocking questions.",
+		"- Keep raw exploration, logs, full file contents, and trial-and-error out of the parent context unless they are essential evidence.",
+	].join("\n");
+}
+
 function buildWorkflowSection(
 	cwd: string,
 	executionCwd: string,
@@ -922,6 +1024,7 @@ function buildWorkflowSection(
 	effortMode: EffortMode,
 	currentThinkingLevel: ThinkingLevel,
 	verificationContext: VerificationContext | undefined,
+	builderDelegationMode: BuilderDelegationMode,
 ): string {
 	const lines = [
 		"## Pi Workflow",
@@ -956,7 +1059,7 @@ function buildWorkflowSection(
 	}
 
 	if (profileName === "builder") {
-		lines.push("");
+		lines.push("", buildBuilderDelegationSection(builderDelegationMode), "");
 		if (!plan) {
 			lines.push(
 				"No active plan is available.",
@@ -981,7 +1084,7 @@ function buildWorkflowSection(
 		lines.push(
 			"",
 			"Completion workflow:",
-			"- After implementation, send the diff through reviewer.",
+			"- After implementation, send the diff through reviewer, preferably as a fresh child agent when delegation is on.",
 			"- Send reviewer findings to planner for acceptance; use the local `dev-planner` persona when switching personas, and `planner` when launching a child agent.",
 			"- If planner returns `ACCEPTANCE: CHANGES_REQUESTED`, fix only accepted blocking issues and repeat review/acceptance, up to 3 total loops.",
 			"- After planner returns `ACCEPTANCE: ACCEPTED`, update architecture memory when the accepted change affects aim, targets, structure, data flow, principles, invariants, or validation.",
@@ -1014,6 +1117,7 @@ function buildWorkflowSection(
 		"- `/persona` to switch persona",
 		"- `/path conversation|dev` to switch workflow path",
 		"- `/workflow status` to inspect persona, path, plan, tools, and builder mode",
+		"- `/builder status|on|off` to inspect or toggle builder delegation",
 		"- `/stop` to stop new tool calls; `/stop resume` to allow tools again",
 		"- `/plan` to inspect, create, edit, approve, or remove the active plan",
 		"- `/architecture` to inspect or edit project architecture memory",
@@ -1115,6 +1219,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 	};
 	let activeProfileName = DEFAULT_PROFILE;
 	let effortMode: EffortMode = "auto";
+	let builderDelegationMode: BuilderDelegationMode = DEFAULT_BUILDER_DELEGATION_MODE;
 	let verifierCommandsThisTurn: string[] = [];
 
 	function getCurrentProfile(): ProfileDefinition | undefined {
@@ -1208,6 +1313,23 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		}
 	}
 
+	async function setBuilderDelegationMode(
+		nextMode: BuilderDelegationMode,
+		ctx: ExtensionContext,
+		options?: { notify?: boolean; persist?: boolean },
+	): Promise<void> {
+		builderDelegationMode = nextMode;
+		updateStatus(ctx);
+
+		if (options?.persist) {
+			pi.appendEntry(BUILDER_DELEGATION_STATE_TYPE, { mode: nextMode });
+		}
+
+		if (options?.notify) {
+			ctx.ui.notify(`Builder delegation: ${nextMode}`, "info");
+		}
+	}
+
 	function updateStatus(ctx: ExtensionContext): void {
 		const profile = getCurrentProfile();
 		if (!profile) return;
@@ -1222,6 +1344,10 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		const effortLabel =
 			effortMode === "auto" ? `effort:auto/${currentThinkingLevel}` : `effort:${currentThinkingLevel}`;
 		ctx.ui.setStatus(EFFORT_STATUS_KEY, ctx.ui.theme.fg("muted", effortLabel));
+		ctx.ui.setStatus(
+			BUILDER_DELEGATION_STATUS_KEY,
+			ctx.ui.theme.fg(builderDelegationMode === "on" ? "accent" : "dim", `delegate:${builderDelegationMode}`),
+		);
 
 		if (activeProfileName === "verifier") {
 			const verificationContext = inferVerificationContext(getExecutionCwd(ctx), plan);
@@ -1506,7 +1632,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			? `${architectureBundle.documents.length} file(s) (${getRelativeArchitecturePath(ctx.cwd)})`
 			: `missing (${getRelativeArchitecturePath(ctx.cwd)})`;
 		const builderMode = getProfile(loadedProfiles, "builder")
-			? "review loop: builder -> reviewer -> planner acceptance, max 3 loops"
+			? `delegation ${builderDelegationMode}; review loop: builder -> reviewer -> planner acceptance, max 3 loops`
 			: "builder profile unavailable";
 
 		return [
@@ -1516,6 +1642,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			`Plan: ${planLabel}`,
 			`Architecture: ${architectureLabel}`,
 			`Builder mode: ${builderMode}`,
+			`Builder command: /builder status|on|off`,
 			`Web tools: ${availableWebTools.length > 0 ? availableWebTools.join(", ") : "none active"}`,
 			`Aliases: planner → dev-planner, architect → dev-planner`,
 		].join("\n");
@@ -1532,6 +1659,25 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		ctx.ui.notify(`Unknown /workflow action "${action}". Try: ${WORKFLOW_COMMANDS.join(", ")}`, "error");
 	}
 
+	async function handleBuilderCommand(args: string, ctx: ExtensionContext): Promise<void> {
+		const tokens = args.trim().toLowerCase().split(/\s+/).filter(Boolean);
+		const action = tokens[0] ?? "status";
+		const requestedMode = action === "delegation" ? tokens[1] ?? "status" : action;
+
+		if (requestedMode === "status") {
+			ctx.ui.notify(`Builder delegation: ${builderDelegationMode}`, "info");
+			return;
+		}
+
+		const nextMode = normalizeBuilderDelegationMode(requestedMode);
+		if (!nextMode) {
+			ctx.ui.notify(`Usage: /builder [status|on|off|delegation on|delegation off]`, "error");
+			return;
+		}
+
+		await setBuilderDelegationMode(nextMode, ctx, { notify: true, persist: true });
+	}
+
 	pi.registerFlag("persona", {
 		description: "Persona profile to start with",
 		type: "string",
@@ -1539,6 +1685,11 @@ export default function personaExtension(pi: ExtensionAPI): void {
 
 	pi.registerFlag("effort", {
 		description: "Reasoning effort override (auto|off|minimal|low|medium|high|xhigh)",
+		type: "string",
+	});
+
+	pi.registerFlag("builder-delegation", {
+		description: "Builder subagent delegation mode (on|off)",
 		type: "string",
 	});
 
@@ -1600,6 +1751,14 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		},
 	});
 
+	pi.registerCommand("builder", {
+		description: "Inspect or toggle builder delegation",
+		getArgumentCompletions: (prefix) => getBuilderArgumentCompletions(prefix),
+		handler: async (args, ctx) => {
+			await handleBuilderCommand(args, ctx);
+		},
+	});
+
 	pi.registerCommand("effort", {
 		description: "Show or override reasoning effort",
 		getArgumentCompletions: (prefix) => getEffortArgumentCompletions(prefix),
@@ -1646,6 +1805,21 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			ctx.ui.notify(`Unknown effort "${effortFlag}", using ${storedEffort ?? "auto"}`, "warning");
 		}
 		effortMode = flaggedEffort ?? storedEffort ?? "auto";
+
+		const builderDelegationFlag = pi.getFlag("builder-delegation");
+		const flaggedBuilderDelegation = typeof builderDelegationFlag === "string"
+			? normalizeBuilderDelegationMode(builderDelegationFlag.trim())
+			: undefined;
+		const storedBuilderDelegation = normalizeBuilderDelegationMode(
+			getLatestCustomEntryData<BuilderDelegationState>(ctx, BUILDER_DELEGATION_STATE_TYPE)?.mode,
+		);
+		if (typeof builderDelegationFlag === "string" && !flaggedBuilderDelegation) {
+			ctx.ui.notify(
+				`Unknown builder delegation "${builderDelegationFlag}", using ${storedBuilderDelegation ?? DEFAULT_BUILDER_DELEGATION_MODE}`,
+				"warning",
+			);
+		}
+		builderDelegationMode = flaggedBuilderDelegation ?? storedBuilderDelegation ?? DEFAULT_BUILDER_DELEGATION_MODE;
 
 		await applyProfile(initialProfile, ctx);
 	});
@@ -1767,6 +1941,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 				effortMode,
 				pi.getThinkingLevel(),
 				verificationContext,
+				builderDelegationMode,
 			)}`,
 		};
 	});

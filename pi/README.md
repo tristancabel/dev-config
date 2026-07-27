@@ -11,11 +11,13 @@
 ## Paths
 - Conversation path: use `conversation` for normal questions, internet lookup, source fetching, and concise answers.
 - Dev path: use `dev-planner → builder → reviewer → planner acceptance`; builder fixes accepted blocking findings and repeats review/acceptance up to 3 total loops. When launching a child agent for acceptance, use `planner`; `dev-planner` is the local persona name.
+- Builder delegation is on by default: for long, multi-file, exploratory, risky, architecture-sensitive, or high-context work, builder keeps the parent session as orchestrator and delegates bounded work to focused child agents.
 - After acceptance, builder updates `.pi/architecture.md` or `.pi/architecture/<target>.md` when the accepted change affects system aim, targets, structure, data flow, principles, invariants, or validation.
 - `/plan approve` marks a plan as ready and keeps useful status metadata, but builder edits are no longer hard-blocked by missing approval.
 - `/path conversation` switches to Q&A and web research.
 - `/path dev` switches to the dev-planner-first development workflow.
 - `/workflow status` shows active path, persona, plan status, active web tools, and builder mode.
+- `/builder on|off|status` toggles or inspects builder delegation.
 
 ## Commands
 - /persona
@@ -23,6 +25,9 @@
 - /path conversation
 - /path dev
 - /workflow status
+- /builder status
+- /builder on
+- /builder off
 - /stop
 - /stop status
 - /stop resume
@@ -64,6 +69,7 @@
 - persistent project plan at `.pi/plans/active-plan.md`
 - architecture memory at `.pi/architecture.md`, with optional target splits under `.pi/architecture/`
 - guided builder workflow with reviewer plus planner acceptance, capped at 3 loops
+- default-on builder delegation for long-context coding work, with `/builder on|off`
 - internet research tools for conversation and read-only/review personas
 - explicit web-use policy per persona
 - workflow path switching with `/path`
@@ -89,19 +95,19 @@
 - project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
 - workflow enforcement through Pi extensions
 - session reporting with model, input/output tokens, prompt detail, elapsed time, and estimated equivalent manual effort; `/report` saves a Markdown file by default
-- optional subagent delegation for second opinions, parallel review, chains, and background scouting
+- subagent delegation for long builder tasks, second opinions, parallel review, chains, and background scouting
 
 ## Subagents
-This setup includes `pi-subagents` for optional child-agent delegation.
+This setup includes `pi-subagents` for child-agent delegation. Builder delegation is on by default and can be toggled with `/builder on` or `/builder off`.
 
 Use it when a task benefits from another focused Pi session:
-- `oracle` for second opinions before risky decisions
-- `scout` for background or fresh-context code exploration
-- `planner` for a child-generated implementation plan
-- `worker` for executing an already clear plan
+- `scout` for fresh-context exploration before implementation
+- `planner` for focused child-generated plans or planner acceptance
+- `worker` for executing an already clear plan in a bounded child context
 - `reviewer` for fresh review, parallel review, and review loops
+- `oracle` for second opinions before risky decisions
 
-Keep the parent session as the orchestrator. For everyday small edits and direct questions, the normal persona workflow is simpler.
+Keep the parent session as the orchestrator. Child agents should receive compact task capsules and return concise results only: changed files, summary, validation evidence, unresolved risks, and blocking questions. For everyday small edits and direct questions, the normal persona workflow is simpler.
 
 See [`SUBAGENTS.md`](SUBAGENTS.md) for a tutorial and recommended local workflows.
 

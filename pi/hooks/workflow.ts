@@ -9,7 +9,7 @@ WORKFLOW:
 - dev-planner → clarify, research, plan, and accept reviewer findings as the local persona
 - builder → code focused changes, then run reviewer and planner acceptance before completion
 - reviewer → review only and end with REVIEW: PASS or REVIEW: FAIL
-- subagents → optional child sessions for second opinions, fresh review, parallel audits, chains, and background scouting
+- subagents → child sessions for delegated builder work, second opinions, fresh review, parallel audits, chains, and background scouting
 - architecture memory → read .pi/architecture.md and .pi/architecture/*.md for dev work; update after accepted architecture-sensitive changes
 
 PATH COMMANDS:
@@ -17,6 +17,7 @@ PATH COMMANDS:
 - /path conversation → Q&A and web research
 - /path dev → dev-planner-first development workflow
 - /workflow status → show path, persona, plan status, web tools, and builder mode
+- /builder status|on|off → inspect or toggle builder delegation; default is on
 - /stop → stop new agent tool calls; /stop resume → allow tools again
 - /report [save|show|copy] [branch|all] → save a Markdown report by default; show/copy are explicit alternatives
 - /architecture status|show|edit|path → inspect or update project architecture memory
@@ -37,10 +38,14 @@ PATH HANDLING:
 SUBAGENT GUIDANCE:
 
 - Keep the parent session as orchestrator
+- With builder delegation on, delegate long, multi-file, exploratory, risky, architecture-sensitive, or high-context builder work to focused child agents
+- Use compact task capsules for child agents: goal, paths, constraints, plan excerpt, expected output, and validation commands
+- Child agents should return only changed files, concise summary, validation evidence, unresolved risks, and blocking questions
 - Use oracle for risky decisions or plan critique
 - Use parallel reviewers for nontrivial diffs
 - When launching child agents, use planner for acceptance; dev-planner is the local persona name
 - Use background scout for broad read-only exploration
+- Do not use parallel editing workers; parallel child agents are for read-only scouting or review
 - Prefer the normal persona path for small edits and simple questions
 
 If a request clearly belongs to another path, suggest or switch persona instead of refusing by default.
