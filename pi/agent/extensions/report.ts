@@ -35,6 +35,7 @@ type PromptDetail = {
 type LlmCall = {
 	index: number;
 	timestamp?: string;
+	profile?: string;
 	provider?: string;
 	model?: string;
 	api?: string;
@@ -42,6 +43,7 @@ type LlmCall = {
 	usage: UsageTotals;
 	outputWords: number;
 	toolCalls: number;
+	toolNames: string[];
 };
 
 type TurnSummary = {
@@ -61,6 +63,8 @@ type ReportOptions = {
 
 const REPORT_OUTPUT_DIR = join(homedir(), ".pi", "agent", "pi-reports");
 const REPORT_COMMANDS = ["save", "show", "copy", "all", "branch"];
+const PROFILE_STATE_TYPE = "pi-profile-state";
+const DELEGATION_CONTEXT_THRESHOLD = 0.65;
 
 function emptyUsage(): UsageTotals {
 	return {
@@ -158,9 +162,19 @@ function extractTextFromContent(content: unknown): string {
 	return parts.join("\n").trim();
 }
 
-function extractToolCallCount(content: unknown): number {
-	if (!Array.isArray(content)) return 0;
-	return content.filter((item) => asRecord(item)?.type === "toolCall").length;
+function extractToolCallNames(content: unknown): string[] {
+	if (!Array.isArray(content)) return [];
+	return content
+		.map((item) => asRecord(item))
+		.filter((item): item is Record<string, unknown> => item?.type === "toolCall")
+		.map((item) => typeof item.name === "string" ? item.name : "")
+		.filter(Boolean);
+}
+
+function extractProfileName(entry: SessionEntryLike): string | undefined {
+	if (entry.type !== "custom" || entry.customType !== PROFILE_STATE_TYPE) return undefined;
+	const data = asRecord(entry.data);
+	return typeof data?.name === "string" ? data.name : undefined;
 }
 
 function extractUsage(message: Record<string, unknown>): UsageTotals {
@@ -253,6 +267,51 @@ function summarizeTurns(entries: SessionEntryLike[], callsByEntry: Map<string, L
 	return turns;
 }
 
+function buildDelegationDiagnostics(llmCalls: LlmCall[], contextWindow: number | undefined): string[] {
+	const thresholdTokens = contextWindow && Number.isFinite(contextWindow)
+		? Math.round(contextWindow * DELEGATION_CONTEXT_THRESHOLD)
+		: 65000;
+	const subagentCalls = llmCalls.filter((call) => call.toolNames.includes("subagent"));
+	const builderCalls = llmCalls.filter((call) => call.profile === "builder");
+	const highContextBuilderCalls = builderCalls.filter((call) => call.usage.input >= thresholdTokens);
+	const parentBuilderToolCallsAfterThreshold = highContextBuilderCalls.reduce(
+		(total, call) => total + call.toolNames.filter((name) => name !== "subagent").length,
+		0,
+	);
+	const largestBuilderCall = [...builderCalls].sort((a, b) => b.usage.input - a.usage.input)[0];
+	const missedDelegation = highContextBuilderCalls.length > 0 && subagentCalls.length === 0;
+	const firstCall = llmCalls[0];
+	const lastCall = llmCalls[llmCalls.length - 1];
+	const peakCall = [...llmCalls].sort((a, b) => b.usage.input - a.usage.input)[0];
+	const thresholdCrossingCall = llmCalls.find((call) => call.usage.input >= thresholdTokens);
+	const largestOutputCalls = [...llmCalls]
+		.filter((call) => call.usage.output > 0)
+		.sort((a, b) => b.usage.output - a.usage.output)
+		.slice(0, 3);
+
+	const lines = [
+		"## Delegation Diagnostics",
+		`- Context growth estimate: ${firstCall && lastCall ? `${formatNumber(firstCall.usage.input)} -> ${formatNumber(lastCall.usage.input)} input tokens` : "unknown"}`,
+		`- Peak input context: ${peakCall ? `#${peakCall.index} with ${formatNumber(peakCall.usage.input)} input tokens` : "unknown"}`,
+		`- First threshold crossing: ${thresholdCrossingCall ? `#${thresholdCrossingCall.index} at ${formatNumber(thresholdCrossingCall.usage.input)} input tokens` : "none"}`,
+		`- Subagent tool calls: ${formatNumber(subagentCalls.length)}`,
+		`- Builder LLM calls in parent: ${formatNumber(builderCalls.length)}`,
+		`- High-context builder calls in parent: ${formatNumber(highContextBuilderCalls.length)} (threshold: ${formatNumber(thresholdTokens)} input tokens)`,
+		`- Non-subagent tool calls during high-context builder work: ${formatNumber(parentBuilderToolCallsAfterThreshold)}`,
+		`- Largest builder call: ${largestBuilderCall ? `#${largestBuilderCall.index} with ${formatNumber(largestBuilderCall.usage.input)} input tokens` : "none"}`,
+		`- Largest output contributors: ${largestOutputCalls.length > 0 ? largestOutputCalls.map((call) => `#${call.index} ${formatNumber(call.usage.output)} output`).join(", ") : "none"}`,
+		`- Delegation likely missed: ${missedDelegation ? "yes" : "no"}`,
+	];
+
+	if (missedDelegation) {
+		lines.push(
+			"- Recommendation: delegate approved-plan or high-context implementation to a fresh `worker` subagent, then keep only compact worker results, review findings, planner acceptance, and validation evidence in the parent session.",
+		);
+	}
+
+	return lines;
+}
+
 function buildReport(ctx: ExtensionCommandContext, options: ReportOptions): string {
 	const entries = getEntries(ctx, options.scope);
 	const header = ctx.sessionManager.getHeader();
@@ -264,8 +323,15 @@ function buildReport(ctx: ExtensionCommandContext, options: ReportOptions): stri
 	let toolResultCount = 0;
 	let totalToolCalls = 0;
 	let assistantOutputWords = 0;
+	let currentProfile: string | undefined;
 
 	for (const entry of entries) {
+		const profileName = extractProfileName(entry);
+		if (profileName) {
+			currentProfile = profileName;
+			continue;
+		}
+
 		if (entry.type !== "message") continue;
 		const message = asRecord(entry.message);
 		if (!message) continue;
@@ -294,10 +360,12 @@ function buildReport(ctx: ExtensionCommandContext, options: ReportOptions): stri
 		const usage = extractUsage(message);
 		const provider = typeof message.provider === "string" ? message.provider : undefined;
 		const model = typeof message.model === "string" ? message.model : undefined;
-		const toolCalls = extractToolCallCount(message.content);
+		const toolNames = extractToolCallNames(message.content);
+		const toolCalls = toolNames.length;
 		const llmCall: LlmCall = {
 			index: llmCalls.length + 1,
 			timestamp: entry.timestamp,
+			profile: currentProfile,
 			provider,
 			model,
 			api: typeof message.api === "string" ? message.api : undefined,
@@ -305,6 +373,7 @@ function buildReport(ctx: ExtensionCommandContext, options: ReportOptions): stri
 			usage,
 			outputWords: countWords(text),
 			toolCalls,
+			toolNames,
 		};
 
 		llmCalls.push(llmCall);
@@ -399,18 +468,20 @@ function buildReport(ctx: ExtensionCommandContext, options: ReportOptions): stri
 		`- Estimated speedup vs recorded work time: ${speedup}`,
 		"- Method: heuristic based on prompt count, LLM calls, tool calls, and generated output length. Treat as an order-of-magnitude estimate, not accounting data.",
 		"",
+		...buildDelegationDiagnostics(llmCalls, contextUsage?.contextWindow),
+		"",
 		"## LLM Call Detail",
 	);
 
 	if (llmCalls.length === 0) {
 		lines.push("- No assistant messages with usage metadata found.");
 	} else {
-		lines.push("| # | Time | Model | Input | Output | Total | Tool calls | Stop |");
-		lines.push("|---|---|---|---:|---:|---:|---:|---|");
+		lines.push("| # | Time | Profile | Model | Input | Output | Total | Tool calls | Stop |");
+		lines.push("|---|---|---|---|---:|---:|---:|---:|---|");
 		for (const call of llmCalls) {
 			const total = call.usage.total || call.usage.input + call.usage.output + call.usage.cacheRead + call.usage.cacheWrite;
 			lines.push(
-				`| ${call.index} | ${call.timestamp ?? "unknown"} | ${modelLabel(call.provider, call.model)} | ${formatNumber(call.usage.input)} | ${formatNumber(call.usage.output)} | ${formatNumber(total)} | ${formatNumber(call.toolCalls)} | ${call.stopReason ?? ""} |`,
+				`| ${call.index} | ${call.timestamp ?? "unknown"} | ${call.profile ?? ""} | ${modelLabel(call.provider, call.model)} | ${formatNumber(call.usage.input)} | ${formatNumber(call.usage.output)} | ${formatNumber(total)} | ${formatNumber(call.toolCalls)} | ${call.stopReason ?? ""} |`,
 			);
 		}
 	}

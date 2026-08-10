@@ -606,7 +606,8 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 	let memoryEnabled = true;
 	let worktreeState: WorktreeState = { enabled: false };
 	let agentStopped = false;
-	let warnedHighContext = false;
+	let warnedContextPressureLevel = 0;
+	let autoCompactedHighContext = false;
 	let warnedSensitiveMemory = false;
 
 	function getBuiltInTools(cwd: string): BuiltInTools {
@@ -655,14 +656,37 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		if (!usage || usage.percent === null) return;
 
 		if (usage.percent >= 85) {
-			if (!warnedHighContext && ctx.hasUI) {
-				ctx.ui.notify("Context usage is high. Run `/context compact` to trim stale turns while keeping workflow state.", "warning");
+			if (warnedContextPressureLevel < 85 && ctx.hasUI) {
+				ctx.ui.notify("Context usage is critical. Starting `/context compact` to trim stale turns while preserving workflow state.", "warning");
 			}
-			warnedHighContext = true;
+			warnedContextPressureLevel = 85;
+			if (!autoCompactedHighContext) {
+				autoCompactedHighContext = true;
+				triggerCompaction(ctx, "Context reached 85% or higher; keep only durable workflow state, active decisions, current files changed, validation evidence, and unresolved blockers.");
+			}
 			return;
 		}
 
-		if (usage.percent < 70) warnedHighContext = false;
+		if (usage.percent >= 75) {
+			if (warnedContextPressureLevel < 75 && ctx.hasUI) {
+				ctx.ui.notify("Context usage is high. Prefer worker subagents for implementation and run `/context compact` before long parent turns.", "warning");
+			}
+			warnedContextPressureLevel = 75;
+			return;
+		}
+
+		if (usage.percent >= 65) {
+			if (warnedContextPressureLevel < 65 && ctx.hasUI) {
+				ctx.ui.notify("Context usage is rising. Keep parent summaries compact and delegate long coding work to worker subagents.", "info");
+			}
+			warnedContextPressureLevel = 65;
+			return;
+		}
+
+		if (usage.percent < 60) {
+			warnedContextPressureLevel = 0;
+			autoCompactedHighContext = false;
+		}
 	}
 
 	function maybeWarnAboutSensitiveMemory(ctx: ExtensionContext): void {
@@ -731,7 +755,7 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		ctx.compact({
 			customInstructions,
 			onComplete: () => {
-				warnedHighContext = false;
+				warnedContextPressureLevel = 0;
 				updateStatus(ctx);
 				ctx.ui.notify("Compaction completed", "success");
 			},
@@ -1180,7 +1204,8 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		worktreeState = getLatestCustomEntryData<WorktreeState>(ctx, WORKTREE_STATE_TYPE) ?? { enabled: false };
 		agentStopped = false;
 		clearPromptState();
-		warnedHighContext = false;
+		warnedContextPressureLevel = 0;
+		autoCompactedHighContext = false;
 		warnedSensitiveMemory = false;
 
 		if (worktreeState.enabled && worktreeState.path && !existsSync(worktreeState.path)) {
@@ -1283,7 +1308,11 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_compact", async (_event, ctx) => {
-		warnedHighContext = false;
+		warnedContextPressureLevel = 0;
+		const usage = ctx.getContextUsage();
+		if (!usage || usage.percent === null || usage.percent < 60) {
+			autoCompactedHighContext = false;
+		}
 		updateStatus(ctx);
 	});
 }

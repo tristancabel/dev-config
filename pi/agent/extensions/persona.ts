@@ -123,6 +123,7 @@ const ARCHITECTURE_COMMANDS = ["status", "show", "edit", "path"];
 const PATH_COMMANDS = ["status", "conversation", "dev"];
 const WORKFLOW_COMMANDS = ["status"];
 const BUILDER_COMMAND_COMPLETIONS = ["status", "on", "off", "delegation status", "delegation on", "delegation off"];
+const BUILDER_DELEGATION_CONTEXT_THRESHOLD = 65;
 const EFFORT_LEVELS: EffortMode[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"];
 const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
 const DEFAULT_PERSONA_PRIORITY = ["conversation", "dev-planner", "scout", "builder", "reviewer", "verifier"];
@@ -744,6 +745,47 @@ function explainBashBlock(profileName: string, mode: PermissionMode, command: st
 	return undefined;
 }
 
+function isDirectBuilderMutationTool(toolName: string): boolean {
+	return !["subagent", ...READ_ONLY_TOOLS].includes(toolName);
+}
+
+function getBuilderDelegationBlockReason(
+	ctx: ExtensionContext,
+	toolName: string,
+	command: unknown,
+	plan: PlanDocument | undefined,
+	allToolNames: string[],
+): string | undefined {
+	if (activeProfileName !== "builder" || builderDelegationMode !== "on") return undefined;
+	if (!allToolNames.includes("subagent")) return undefined;
+
+	const usage = ctx.getContextUsage();
+	const contextHigh = usage?.percent !== null && usage?.percent !== undefined && usage.percent >= BUILDER_DELEGATION_CONTEXT_THRESHOLD;
+	const approvedPlan = plan?.status === "approved";
+	if (!contextHigh && !approvedPlan) return undefined;
+
+	if (toolName === "bash" && typeof command === "string" && isSafeReadOnlyCommand(command)) return undefined;
+	const isMutationTool = toolName === "bash" || isDirectBuilderMutationTool(toolName);
+	if (!isMutationTool) return undefined;
+
+	const reasons = [
+		approvedPlan ? "an approved implementation plan is active" : undefined,
+		contextHigh && usage?.percent !== null && usage?.percent !== undefined
+			? `parent context is already ${Math.round(usage.percent)}% full`
+			: undefined,
+	].filter((reason): reason is string => Boolean(reason));
+
+	return [
+		`Builder delegation is on, and ${reasons.join(" and ")}.`,
+		"Do not spend parent context on direct implementation.",
+		"First delegate the bounded implementation with `subagent`, preferably after `subagent({ action: \"list\" })`:",
+		'- `agent`: "worker"',
+		'- `context`: "fresh"',
+		"- `task`: compact capsule with goal, approved-plan excerpt, relevant paths, constraints, expected output, and validation commands",
+		"Use the parent only to synthesize the worker result, run reviewer/planner acceptance, and compact with `/context compact` if needed.",
+	].join("\n");
+}
+
 function suggestProfile(loadedProfiles: LoadedProfiles, input: string): string | undefined {
 	const normalized = input.trim().toLowerCase();
 	if (normalized.length < 4 || normalized.startsWith("/")) return undefined;
@@ -1004,7 +1046,9 @@ function buildBuilderDelegationSection(mode: BuilderDelegationMode): string {
 	return [
 		"Builder delegation: ON",
 		"- Default to keeping the parent builder session as the orchestrator for long or context-heavy coding work.",
-		"- Delegate bounded work to child agents when the task is multi-file, architecture-sensitive, exploratory, risky, based on a multi-step plan, likely to create large tool output, or context usage is already high.",
+		`- Delegate bounded work to child agents when the task is multi-file, architecture-sensitive, exploratory, risky, based on a multi-step plan, likely to create large tool output, or parent context is at least ${BUILDER_DELEGATION_CONTEXT_THRESHOLD}% full.`,
+		"- If an approved plan is active and the user says to proceed, execute via a worker subagent first; do not start direct parent edits.",
+		"- First inspect available agents with `subagent({ action: \"list\" })`, then call `subagent` with `agent: \"worker\"`, `context: \"fresh\"`, and a compact task capsule.",
 		"- Prefer scout/planner child agents for focused exploration or plan shaping, one worker child agent for implementation, reviewer for fresh review, and planner for acceptance.",
 		"- Do not use parallel editing workers. Parallel child agents are for read-only scouting or review angles.",
 		"- Send child agents a compact task capsule: goal, relevant paths, constraints, plan excerpt, expected output, and validation commands.",
@@ -1855,12 +1899,21 @@ export default function personaExtension(pi: ExtensionAPI): void {
 
 		const plan = readPlan(ctx.cwd);
 		const mode = getEffectivePermissionMode(activeProfileName, profile, plan);
-		const allowedTools = getAllowedTools(activeProfileName, profile, plan, pi.getAllTools().map((tool) => tool.name));
+		const allToolNames = pi.getAllTools().map((tool) => tool.name);
+		const allowedTools = getAllowedTools(activeProfileName, profile, plan, allToolNames);
 
 		if (!allowedTools.includes(event.toolName)) {
 			return {
 				block: true,
 				reason: `${activeProfileName} (${mode}) does not allow the ${event.toolName} tool.`,
+			};
+		}
+
+		const delegationBlockReason = getBuilderDelegationBlockReason(ctx, event.toolName, event.input.command, plan, allToolNames);
+		if (delegationBlockReason) {
+			return {
+				block: true,
+				reason: delegationBlockReason,
 			};
 		}
 
