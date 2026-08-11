@@ -101,10 +101,15 @@ type BuilderDelegationState = {
 	mode?: BuilderDelegationMode;
 };
 
+type StopState = {
+	stopped?: boolean;
+};
+
 const PROFILE_STATE_TYPE = "pi-profile-state";
 const EFFORT_STATE_TYPE = "pi-effort-state";
 const WORKTREE_STATE_TYPE = "pi-worktree-state";
 const BUILDER_DELEGATION_STATE_TYPE = "pi-builder-delegation-state";
+const STOP_STATE_TYPE = "pi-stop-state";
 const DEFAULT_PROFILE = "conversation";
 const DEFAULT_BUILDER_DELEGATION_MODE: BuilderDelegationMode = "on";
 const PERSONA_STATUS_KEY = "pi-persona";
@@ -750,6 +755,8 @@ function isDirectBuilderMutationTool(toolName: string): boolean {
 }
 
 function getBuilderDelegationBlockReason(
+	activeProfileName: string,
+	builderDelegationMode: BuilderDelegationMode,
 	ctx: ExtensionContext,
 	toolName: string,
 	command: unknown,
@@ -1246,6 +1253,10 @@ function getExecutionCwd(ctx: ExtensionContext): string {
 	return worktreeState.path;
 }
 
+function isAgentStopped(ctx: ExtensionContext): boolean {
+	return getLatestCustomEntryData<StopState>(ctx, STOP_STATE_TYPE)?.stopped ?? false;
+}
+
 function formatWorkspacePath(baseCwd: string, executionCwd: string): string {
 	const relPath = relative(baseCwd, executionCwd);
 	if (!relPath || relPath.length === 0) return ".";
@@ -1309,7 +1320,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 
 		const plan = readPlan(ctx.cwd);
 		const allToolNames = pi.getAllTools().map((tool) => tool.name);
-		pi.setActiveTools(getAllowedTools(profileName, profile, plan, allToolNames));
+		pi.setActiveTools(isAgentStopped(ctx) ? [] : getAllowedTools(profileName, profile, plan, allToolNames));
 		const route = await applyModelAndThinking(profileName, profile, ctx);
 
 		updateStatus(ctx);
@@ -1909,7 +1920,15 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			};
 		}
 
-		const delegationBlockReason = getBuilderDelegationBlockReason(ctx, event.toolName, event.input.command, plan, allToolNames);
+		const delegationBlockReason = getBuilderDelegationBlockReason(
+			activeProfileName,
+			builderDelegationMode,
+			ctx,
+			event.toolName,
+			event.input.command,
+			plan,
+			allToolNames,
+		);
 		if (delegationBlockReason) {
 			return {
 				block: true,
@@ -1979,7 +1998,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			verifierCommandsThisTurn = [];
 		}
 
-		pi.setActiveTools(getAllowedTools(activeProfileName, profile, plan, allToolNames));
+		pi.setActiveTools(isAgentStopped(ctx) ? [] : getAllowedTools(activeProfileName, profile, plan, allToolNames));
 		updateStatus(ctx);
 
 		return {

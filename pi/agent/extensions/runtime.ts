@@ -23,6 +23,10 @@ type MemoryState = {
 	enabled?: boolean;
 };
 
+type StopState = {
+	stopped?: boolean;
+};
+
 type WorktreeState = {
 	enabled?: boolean;
 	name?: string;
@@ -50,6 +54,7 @@ type GitWorktreeRecord = {
 };
 
 const MEMORY_STATE_TYPE = "pi-memory-state";
+const STOP_STATE_TYPE = "pi-stop-state";
 const WORKTREE_STATE_TYPE = "pi-worktree-state";
 const CONTEXT_STATUS_KEY = "pi-context";
 const MEMORY_STATUS_KEY = "pi-memory";
@@ -719,6 +724,18 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		}
 	}
 
+	function setAgentStopped(nextStopped: boolean, ctx: ExtensionContext, persist = true): void {
+		agentStopped = nextStopped;
+		clearPromptState();
+		if (nextStopped) {
+			pi.setActiveTools([]);
+		}
+		updateStatus(ctx);
+		if (persist) {
+			pi.appendEntry(STOP_STATE_TYPE, { stopped: nextStopped });
+		}
+	}
+
 	function getMemoryPromptSection(ctx: ExtensionContext): string {
 		const memoryText = readTextFile(getProjectMemoryPath(ctx.cwd))?.trim() ?? "";
 		const signature = JSON.stringify({
@@ -998,15 +1015,12 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		}
 
 		if (action === "resume") {
-			agentStopped = false;
-			updateStatus(ctx);
+			setAgentStopped(false, ctx);
 			ctx.ui.notify("Agent resumed. Tool calls are enabled again.", "success");
 			return;
 		}
 
-		agentStopped = true;
-		pi.setActiveTools([]);
-		updateStatus(ctx);
+		setAgentStopped(true, ctx);
 		ctx.ui.notify("Agent stopped. New tool calls are blocked until /stop resume.", "warning");
 	}
 
@@ -1202,7 +1216,7 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
 		memoryEnabled = getLatestCustomEntryData<MemoryState>(ctx, MEMORY_STATE_TYPE)?.enabled ?? true;
 		worktreeState = getLatestCustomEntryData<WorktreeState>(ctx, WORKTREE_STATE_TYPE) ?? { enabled: false };
-		agentStopped = false;
+		agentStopped = getLatestCustomEntryData<StopState>(ctx, STOP_STATE_TYPE)?.stopped ?? false;
 		clearPromptState();
 		warnedContextPressureLevel = 0;
 		autoCompactedHighContext = false;
@@ -1214,6 +1228,9 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 			ctx.ui.notify("Saved worktree path no longer exists. Falling back to the main checkout.", "warning");
 		}
 
+		if (agentStopped) {
+			pi.setActiveTools([]);
+		}
 		updateStatus(ctx);
 		maybeWarnAboutSensitiveMemory(ctx);
 	});
