@@ -118,6 +118,7 @@ const PLAN_STATUS_KEY = "pi-plan";
 const EFFORT_STATUS_KEY = "pi-effort";
 const VERIFY_STATUS_KEY = "pi-verify";
 const BUILDER_DELEGATION_STATUS_KEY = "pi-builder-delegation";
+const WORKFLOW_CHECK_STATUS_KEY = "pi-workflow-check";
 const PLAN_DIRECTORY = join(".pi", "plans");
 const PLAN_FILE_NAME = "active-plan.md";
 const ARCHITECTURE_FILE_NAME = "architecture.md";
@@ -172,6 +173,28 @@ const AUTO_SWITCH_INTENT_RULES: Array<{ profile: string; pattern: RegExp; score:
 	{ profile: "verifier", pattern: /\b(verify|validate|test)\s+(the\s+)?(changes?|fix|implementation)\b/i, score: 135 },
 	{ profile: "scout", pattern: /\b(map|trace|explore|inspect|understand)\s+(the\s+)?(code|codebase|flow|architecture|module|repo)\b/i, score: 125 },
 ];
+
+const ACCEPTANCE_LINE_PATTERN = /^\s*ACCEPTANCE:\s*(ACCEPTED|CHANGES_REQUESTED)\s*$/gim;
+const REVIEW_LINE_PATTERN = /^\s*REVIEW:\s*(PASS|FAIL)\s*$/gim;
+const VERDICT_LINE_PATTERN = /^\s*VERDICT:\s*(PASS|FAIL|PARTIAL)\s*$/gim;
+const PLAN_SECTION_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+	{ label: "## Plan", pattern: /^\s*##\s+Plan\s*$/im },
+	{ label: "### Goal", pattern: /^\s*###\s+Goal\s*$/im },
+	{ label: "### Implementation", pattern: /^\s*###\s+Implementation\s*$/im },
+	{ label: "### Validation", pattern: /^\s*###\s+Validation\s*$/im },
+	{ label: "### Risks / Questions", pattern: /^\s*###\s+Risks\s*\/\s*Questions\s*$/im },
+];
+
+const SUBAGENT_CAPABILITY_POLICY = [
+	"Subagent capability policy:",
+	"- scout: read/search/list only; no file edits, package changes, or shell mutations.",
+	"- researcher: web/docs research only; cite sources; no repo mutation.",
+	"- oracle: advice and risk critique only; no file edits.",
+	"- reviewer: read/test/review only; no repo mutation unless explicitly asked for small review fixes by the parent.",
+	"- worker: one bounded implementation task; edit only the relevant workspace/worktree; validate and return concise evidence.",
+	"- delegate: avoid for privileged work; prefer the named specialist with the narrowest role.",
+	"- Parallel child agents must be read-only reviewers/scouts/researchers; do not run parallel editing workers.",
+].join("\n");
 
 const READ_ONLY_SAFE_PATTERNS = [
 	/^\s*cat\b/i,
@@ -404,6 +427,34 @@ function getAssistantText(message: AssistantMessage): string {
 		.map((block) => block.text)
 		.join("\n")
 		.trim();
+}
+
+function getLastAssistantText(messages: AgentMessage[]): string {
+	const lastAssistantMessage = [...messages].reverse().find(isAssistantMessage);
+	return lastAssistantMessage ? getAssistantText(lastAssistantMessage) : "";
+}
+
+function getRegexMatches(text: string, pattern: RegExp): string[] {
+	pattern.lastIndex = 0;
+	return [...text.matchAll(pattern)].map((match) => match[0]);
+}
+
+function endsWithRequiredLine(text: string, pattern: RegExp): boolean {
+	const trimmed = text.trim();
+	const matches = getRegexMatches(trimmed, pattern);
+	return matches.length === 1 && matches[0].trim() === trimmed.split(/\n/).pop()?.trim();
+}
+
+function getMissingPlanSections(text: string): string[] {
+	return PLAN_SECTION_PATTERNS
+		.filter((section) => !section.pattern.test(text))
+		.map((section) => section.label);
+}
+
+function notifyWorkflowCheck(ctx: ExtensionContext, message: string, level: "info" | "warning" | "error" = "warning"): void {
+	const color = level === "info" ? "muted" : "warning";
+	ctx.ui.setStatus(WORKFLOW_CHECK_STATUS_KEY, ctx.ui.theme.fg(color, level === "info" ? "check:ok" : "check:warn"));
+	ctx.ui.notify(message, level);
 }
 
 function getPlanPath(cwd: string): string {
@@ -1061,6 +1112,8 @@ function buildBuilderDelegationSection(mode: BuilderDelegationMode): string {
 		"- Send child agents a compact task capsule: goal, relevant paths, constraints, plan excerpt, expected output, and validation commands.",
 		"- Ask children to return only files changed, concise summary, validation evidence, unresolved risks, and blocking questions.",
 		"- Keep raw exploration, logs, full file contents, and trial-and-error out of the parent context unless they are essential evidence.",
+		"",
+		SUBAGENT_CAPABILITY_POLICY,
 	].join("\n");
 }
 
@@ -2025,12 +2078,31 @@ export default function personaExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("agent_end", async (event, ctx) => {
-		if (activeProfileName === "dev-planner") {
-			const lastAssistantMessage = [...event.messages].reverse().find(isAssistantMessage);
-			if (!lastAssistantMessage) return;
+		const body = getLastAssistantText(event.messages);
 
-			const body = getAssistantText(lastAssistantMessage);
+		if (activeProfileName === "dev-planner") {
 			if (!body) return;
+
+			if (getRegexMatches(body, ACCEPTANCE_LINE_PATTERN).length > 0) {
+				if (!endsWithRequiredLine(body, ACCEPTANCE_LINE_PATTERN)) {
+					notifyWorkflowCheck(ctx, "Dev-planner acceptance must end with exactly one final ACCEPTANCE line.", "warning");
+				} else {
+					notifyWorkflowCheck(ctx, "Dev-planner acceptance format verified.", "info");
+				}
+				updateStatus(ctx);
+				return;
+			}
+
+			const missingSections = getMissingPlanSections(body);
+			if (missingSections.length > 0) {
+				notifyWorkflowCheck(
+					ctx,
+					`Dev-planner draft is missing required plan section(s): ${missingSections.join(", ")}.`,
+					"warning",
+				);
+			} else {
+				notifyWorkflowCheck(ctx, "Dev-planner draft plan format verified.", "info");
+			}
 
 			writePlan(ctx.cwd, {
 				status: "draft",
@@ -2043,17 +2115,27 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			return;
 		}
 
-		if (activeProfileName !== "verifier") return;
-
-		const lastAssistantMessage = [...event.messages].reverse().find(isAssistantMessage);
-		const body = lastAssistantMessage ? getAssistantText(lastAssistantMessage) : "";
-
-		if (verifierCommandsThisTurn.length === 0) {
-			ctx.ui.notify("Verifier finished without running executable checks.", "warning");
+		if (activeProfileName === "reviewer") {
+			if (!body) return;
+			if (!endsWithRequiredLine(body, REVIEW_LINE_PATTERN)) {
+				notifyWorkflowCheck(ctx, "Reviewer response must end with exactly one final REVIEW: PASS or REVIEW: FAIL line.", "warning");
+			} else {
+				notifyWorkflowCheck(ctx, "Reviewer verdict format verified.", "info");
+			}
+			updateStatus(ctx);
+			return;
 		}
 
-		if (body && !/\bVERDICT:\s*(PASS|FAIL|PARTIAL)\b/i.test(body)) {
-			ctx.ui.notify("Verifier response did not include a VERDICT line.", "warning");
+		if (activeProfileName !== "verifier") return;
+
+		if (verifierCommandsThisTurn.length === 0) {
+			notifyWorkflowCheck(ctx, "Verifier finished without running executable checks.", "warning");
+		}
+
+		if (body && !endsWithRequiredLine(body, VERDICT_LINE_PATTERN)) {
+			notifyWorkflowCheck(ctx, "Verifier response must end with exactly one final VERDICT: PASS, VERDICT: FAIL, or VERDICT: PARTIAL line.", "warning");
+		} else if (body) {
+			notifyWorkflowCheck(ctx, "Verifier verdict format verified.", "info");
 		}
 
 		updateStatus(ctx);

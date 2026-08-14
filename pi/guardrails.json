@@ -1,7 +1,7 @@
 {
   "deny": [
     {
-      "command": "^rm -rf \\s+/",
+      "command": "^rm\\s+-rf\\s+/",
       "message": "Nice try, but I like my root directory where it is."
     },
     {
@@ -31,7 +31,7 @@
   ],
   "confirm": [
     {
-      "command": "^rm -rf \\s+\\.",
+      "command": "^rm\\s+-rf\\s+\\.",
       "message": "Are you sure you want to delete these files recursively?"
     },
     {

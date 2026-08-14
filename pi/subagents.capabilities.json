@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "default": {
+    "parallelEditing": "deny",
+    "parentRole": "orchestrator",
+    "taskCapsuleFields": [
+      "goal",
+      "relevant paths",
+      "constraints",
+      "active plan excerpt",
+      "expected output",
+      "validation commands"
+    ],
+    "returnFields": [
+      "files changed",
+      "concise summary",
+      "validation evidence",
+      "unresolved risks",
+      "blocking questions"
+    ]
+  },
+  "agents": {
+    "scout": {
+      "intent": "Fresh-context codebase exploration.",
+      "mayEditFiles": false,
+      "mayRunMutationCommands": false,
+      "tools": ["read", "bash-readonly", "grep", "find", "ls"],
+      "expectedOutput": ["architecture summary", "key files", "data flow", "risks"]
+    },
+    "researcher": {
+      "intent": "External web/docs research with sources.",
+      "mayEditFiles": false,
+      "mayRunMutationCommands": false,
+      "tools": ["web_search", "fetch_content", "read"],
+      "expectedOutput": ["source-backed findings", "links", "uncertainties"]
+    },
+    "oracle": {
+      "intent": "Second opinion and risk critique before risky decisions.",
+      "mayEditFiles": false,
+      "mayRunMutationCommands": false,
+      "tools": ["read", "bash-readonly", "grep", "find", "ls"],
+      "expectedOutput": ["challenged assumptions", "simpler alternatives", "risks"]
+    },
+    "reviewer": {
+      "intent": "Fresh review, validation gaps, and correctness audit.",
+      "mayEditFiles": false,
+      "mayRunMutationCommands": false,
+      "tools": ["read", "bash-review-runner", "grep", "find", "ls"],
+      "expectedOutput": ["findings first", "validation evidence", "REVIEW verdict"]
+    },
+    "worker": {
+      "intent": "One bounded implementation task.",
+      "mayEditFiles": true,
+      "mayRunMutationCommands": true,
+      "tools": ["read", "edit", "write", "bash", "grep", "find", "ls"],
+      "constraints": [
+        "Use the active cwd or worktree only.",
+        "Edit only paths relevant to the task capsule.",
+        "Escalate missing product decisions instead of guessing.",
+        "Validate before returning.",
+        "Do not run as a parallel editing worker."
+      ],
+      "expectedOutput": ["files changed", "summary", "validation evidence", "risks"]
+    },
+    "delegate": {
+      "intent": "General fallback delegate.",
+      "mayEditFiles": "avoid",
+      "mayRunMutationCommands": "avoid",
+      "tools": ["inherit"],
+      "constraints": [
+        "Prefer a named specialist with narrower permissions.",
+        "Do not use for sensitive or privileged work unless explicitly justified."
+      ],
+      "expectedOutput": ["concise result", "risks"]
+    }
+  }
+}

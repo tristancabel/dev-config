@@ -55,6 +55,14 @@ Child agents should return only:
 - unresolved risks
 - blocking questions
 
+The explicit local capability policy is stored in [`subagents.capabilities.json`](subagents.capabilities.json). Treat it as the source of truth when deciding what a child agent may do:
+
+- `scout`, `researcher`, and `oracle` are read-only.
+- `reviewer` is review-runner only: it may inspect and validate, but should not mutate the repo.
+- `worker` is the only default editing child, and it should receive one bounded task capsule.
+- `delegate` is a fallback, not the default for privileged work.
+- Parallel child agents must be read-only; do not run parallel editing workers.
+
 Good default pattern:
 
 ```text

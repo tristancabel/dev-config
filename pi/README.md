@@ -70,6 +70,7 @@
 - architecture memory at `.pi/architecture.md`, with optional target splits under `.pi/architecture/`
 - guided builder workflow with reviewer plus planner acceptance, capped at 3 loops
 - default-on builder delegation for long-context coding work, with `/builder on|off`
+- explicit subagent capability policy at `subagents.capabilities.json`
 - internet research tools for conversation and read-only/review personas
 - explicit web-use policy per persona
 - workflow path switching with `/path`
@@ -94,6 +95,7 @@
 - failed file reads/edits include basename matches when the requested path appears to be in the wrong directory
 - project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
 - workflow enforcement through Pi extensions
+- harness evals and model-comparison scenarios under `evals/`
 - session reporting with model, input/output tokens, prompt detail, elapsed time, and estimated equivalent manual effort; `/report` saves a Markdown file by default
 - subagent delegation for long builder tasks, second opinions, parallel review, chains, and background scouting
 
@@ -110,6 +112,22 @@ Use it when a task benefits from another focused Pi session:
 Keep the parent session as the orchestrator. Child agents should receive compact task capsules and return concise results only: changed files, summary, validation evidence, unresolved risks, and blocking questions. For everyday small edits and direct questions, the normal persona workflow is simpler.
 
 See [`SUBAGENTS.md`](SUBAGENTS.md) for a tutorial and recommended local workflows.
+
+## Harness Evals
+
+Run the static harness contract check after changing Pi config or extensions:
+
+```bash
+node pi/evals/check-harness.mjs
+```
+
+Use `pi/evals/model-comparison.json` to compare the current local oMLX model with alternate persona routes. Save each candidate response and score basic transcript invariants with:
+
+```bash
+node pi/evals/score-output.mjs <scenario-id> <transcript-file>
+```
+
+See [`evals/README.md`](evals/README.md) for the comparison workflow.
 
 ## macOS Notes
 - Worktree staging uses the host temp directory instead of assuming `/tmp`.
