@@ -10,8 +10,8 @@
     "npm:@plannotator/pi-extension",
     "npm:pi-session-cleanup"
   ],
-  "lastChangelogVersion": "0.84.1",
+  "lastChangelogVersion": "0.84.2",
   "defaultProvider": "omlx",
-  "defaultModel": "unsloth/Qwen3.6-27B-MLX-8bit",
+  "defaultModel": "mlx-community/Qwen3.8-27B-8bit",
   "theme": "dark"
 }

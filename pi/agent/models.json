@@ -21,36 +21,67 @@
             "cacheRead": 0,
             "cacheWrite": 0
           }
+        },
+        {
+            "id": "mlx-community/Qwen3.8-27B-8bit",
+            "name": "Qwen3.8 27B",
+            "reasoning": true,
+            "input": [
+                "text"
+            ],
+
+            "thinkingLevelMap": {
+                "minimal": "low",
+                "low": "low",
+                "medium": "medium",
+                "high": "xhigh",
+                "xhigh": "xhigh",
+                "max": "xhigh"
+            },
+
+            "compat": {
+                "supportsReasoningEffort": true
+            },
+            "contextWindow": 262144,
+            "maxTokens": 32768,
+
+            "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+            }
         }
+
       ]
     }
   },
-  "defaultModel": "omlx/unsloth/Qwen3.6-27B-MLX-8bit",
+  "defaultModel": "omlx/mlx-community/Qwen3.8-27B-8bit",
   "defaultThinkingLevel": "medium",
   "routing": {
     "conversation": {
       "provider": "omlx",
-      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
+      "model": "mlx-community/Qwen3.8-27B-8bit",
       "thinkingLevel": "medium"
     },
     "scout": {
       "provider": "omlx",
-      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
+      "model": "mlx-community/Qwen3.8-27B-8bit",
       "thinkingLevel": "low"
     },
     "dev-planner": {
       "provider": "omlx",
-      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
+      "model": "mlx-community/Qwen3.8-27B-8bit",
       "thinkingLevel": "high"
     },
     "builder": {
       "provider": "omlx",
-      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
+      "model": "mlx-community/Qwen3.8-27B-8bit",
       "thinkingLevel": "medium"
     },
     "reviewer": {
       "provider": "omlx",
-      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
+      "model": "mlx-community/Qwen3.8-27B-8bit",
       "thinkingLevel": "high"
     },
     "verifier": {

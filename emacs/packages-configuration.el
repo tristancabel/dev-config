@@ -493,10 +493,16 @@ CONTINUE-LAST-SESSION controls whether Pi should resume the previous session."
       (process-send-string process string)
     (user-error "No Pi terminal process in this buffer")))
 
+(defun my/pi-agent--clipboard-text ()
+  "Return text from the system clipboard or kill ring."
+  (or (and (fboundp 'gui-get-selection)
+           (ignore-errors (gui-get-selection 'CLIPBOARD 'STRING)))
+      (ignore-errors (current-kill 0 t))))
+
 (defun my/pi-agent-paste ()
   "Paste clipboard text into Pi's terminal editor."
   (interactive)
-  (let ((text (current-kill 0 t)))
+  (let ((text (my/pi-agent--clipboard-text)))
     (unless text
       (user-error "Clipboard is empty"))
     (my/pi-agent--send-string (concat "\e[200~" text "\e[201~"))))
@@ -519,6 +525,13 @@ CONTINUE-LAST-SESSION controls whether Pi should resume the previous session."
   "Minor mode for Pi terminal input conveniences."
   :lighter " Pi"
   :keymap my/pi-agent-terminal-mode-map)
+
+(defvar my/pi-agent-terminal-emulation-mode-map-alist
+  `((my/pi-agent-terminal-mode . ,my/pi-agent-terminal-mode-map))
+  "High-priority keymap for Pi terminal buffers.")
+
+(add-to-list 'emulation-mode-map-alists
+             'my/pi-agent-terminal-emulation-mode-map-alist)
 
 (defun my/pi-agent--configure-terminal-buffer ()
   "Configure terminal-local behavior for a Pi buffer."
