@@ -7,22 +7,6 @@
       "authHeader": true,
       "models": [
         {
-          "id": "unsloth/Qwen3.6-27B-MLX-8bit",
-          "name": "Qwen3.6 27B MLX 8-bit via oMLX",
-          "reasoning": false,
-          "input": [
-            "text"
-          ],
-          "contextWindow": 100000,
-          "maxTokens": 32000,
-          "cost": {
-            "input": 0,
-            "output": 0,
-            "cacheRead": 0,
-            "cacheWrite": 0
-          }
-        },
-        {
             "id": "mlx-community/Qwen3.8-27B-8bit",
             "name": "Qwen3.8 27B",
             "reasoning": true,
@@ -51,42 +35,83 @@
                 "cacheRead": 0,
                 "cacheWrite": 0
             }
+        },
+        {
+            "id": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
+            "name": "Qwen3.8-Flash-Next",
+            "reasoning": true,
+            "input": [
+                "text"
+            ],
+
+            "thinkingLevelMap": {
+                "off": null,
+                "minimal": "low",
+                "low": "low",
+                "medium": "medium",
+                "high": "xhigh",
+                "xhigh": "xhigh",
+                "max": "xhigh"
+            },
+
+            "samplingParams": {
+            "temperature": 1.0,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 0.0,
+            "repetition_penalty": 1.0
+           },
+           "compat": {
+              "supportsReasoningEffort": true,
+              "thinkingFormat": "qwen-chat-template"
+           },
+            "contextWindow": 131072,
+            "maxTokens": 32768,
+
+            "cost": {
+                "input": 0,
+                "output": 0,
+                "cacheRead": 0,
+                "cacheWrite": 0
+            }
         }
+
 
       ]
     }
   },
-  "defaultModel": "omlx/mlx-community/Qwen3.8-27B-8bit",
+  "defaultModel": "omlx/Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
   "defaultThinkingLevel": "medium",
   "routing": {
     "conversation": {
       "provider": "omlx",
-      "model": "mlx-community/Qwen3.8-27B-8bit",
+      "model": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
       "thinkingLevel": "medium"
     },
     "scout": {
       "provider": "omlx",
-      "model": "mlx-community/Qwen3.8-27B-8bit",
+      "model": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
       "thinkingLevel": "low"
     },
     "dev-planner": {
       "provider": "omlx",
-      "model": "mlx-community/Qwen3.8-27B-8bit",
+      "model": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
       "thinkingLevel": "high"
     },
     "builder": {
       "provider": "omlx",
-      "model": "mlx-community/Qwen3.8-27B-8bit",
+      "model": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
       "thinkingLevel": "medium"
     },
     "reviewer": {
       "provider": "omlx",
-      "model": "mlx-community/Qwen3.8-27B-8bit",
+      "model": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
       "thinkingLevel": "high"
     },
     "verifier": {
       "provider": "omlx",
-      "model": "unsloth/Qwen3.6-27B-MLX-8bit",
+      "model": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
       "thinkingLevel": "medium"
     }
   }
