@@ -87,7 +87,7 @@
     {
       "id": "builder-subagent-capsule",
       "persona": "builder",
-      "prompt": "Assume an approved plan exists for a multi-file refactor. Describe the worker subagent task capsule you would send before editing.",
+      "prompt": "Assume builder delegation is on for a large approved-plan refactor. Describe the worker subagent task capsule you would send before editing.",
       "goal": "The model should preserve parent orchestration and use a bounded worker capsule.",
       "criteria": [
         "Names worker as the implementation child.",

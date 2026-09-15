@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
@@ -64,6 +65,17 @@ type ModelRoute = {
 	thinkingLevel?: ThinkingLevel;
 };
 
+type JsonObject = Record<string, unknown>;
+
+type SubagentRunSummary = {
+	id: string;
+	dir: string;
+	statusPath?: string;
+	eventsPath?: string;
+	updatedMs: number;
+	statusData?: JsonObject;
+};
+
 type PlanDocument = {
 	path: string;
 	status: "draft" | "approved";
@@ -111,7 +123,7 @@ const WORKTREE_STATE_TYPE = "pi-worktree-state";
 const BUILDER_DELEGATION_STATE_TYPE = "pi-builder-delegation-state";
 const STOP_STATE_TYPE = "pi-stop-state";
 const DEFAULT_PROFILE = "conversation";
-const DEFAULT_BUILDER_DELEGATION_MODE: BuilderDelegationMode = "on";
+const DEFAULT_BUILDER_DELEGATION_MODE: BuilderDelegationMode = "off";
 const PERSONA_STATUS_KEY = "pi-persona";
 const PATH_STATUS_KEY = "pi-path";
 const PLAN_STATUS_KEY = "pi-plan";
@@ -129,7 +141,9 @@ const ARCHITECTURE_COMMANDS = ["status", "show", "edit", "path"];
 const PATH_COMMANDS = ["status", "conversation", "dev"];
 const WORKFLOW_COMMANDS = ["status"];
 const BUILDER_COMMAND_COMPLETIONS = ["status", "on", "off", "delegation status", "delegation on", "delegation off"];
+const SUBAGENT_RUN_COMMANDS = ["status", "events", "paths"];
 const BUILDER_DELEGATION_CONTEXT_THRESHOLD = 65;
+const SUBAGENT_EVENT_PREVIEW_LINES = 8;
 const EFFORT_LEVELS: EffortMode[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"];
 const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
 const DEFAULT_PERSONA_PRIORITY = ["conversation", "dev-planner", "scout", "builder", "reviewer", "verifier"];
@@ -303,6 +317,159 @@ function readJsonFile<T>(path: string): T | undefined {
 		console.error(`Failed to read ${path}: ${String(error)}`);
 		return undefined;
 	}
+}
+
+function readTextFile(path: string): string | undefined {
+	if (!existsSync(path)) return undefined;
+
+	try {
+		return readFileSync(path, "utf-8");
+	} catch (error) {
+		console.error(`Failed to read ${path}: ${String(error)}`);
+		return undefined;
+	}
+}
+
+function readJsonObject(path: string): JsonObject | undefined {
+	return readJsonFile<JsonObject>(path);
+}
+
+function getPathMtimeMs(path: string | undefined): number {
+	if (!path || !existsSync(path)) return 0;
+	try {
+		return statSync(path).mtimeMs;
+	} catch {
+		return 0;
+	}
+}
+
+function getStringField(source: JsonObject | undefined, keys: string[]): string | undefined {
+	if (!source) return undefined;
+	for (const key of keys) {
+		const value = source[key];
+		if (typeof value === "string" && value.trim().length > 0) return value.trim();
+	}
+	return undefined;
+}
+
+function getSubagentRunsRoot(): string {
+	const uid = typeof process.getuid === "function" ? process.getuid() : "unknown";
+	return join(tmpdir(), `pi-subagents-uid-${uid}`, "async-subagent-runs");
+}
+
+function getSubagentRuns(): SubagentRunSummary[] {
+	const root = getSubagentRunsRoot();
+	if (!existsSync(root)) return [];
+
+	try {
+		return readdirSync(root, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory())
+			.map((entry) => {
+				const dir = join(root, entry.name);
+				const statusPath = join(dir, "status.json");
+				const eventsPath = join(dir, "events.jsonl");
+				const hasStatus = existsSync(statusPath);
+				const hasEvents = existsSync(eventsPath);
+				if (!hasStatus && !hasEvents) return undefined;
+
+				return {
+					id: entry.name,
+					dir,
+					statusPath: hasStatus ? statusPath : undefined,
+					eventsPath: hasEvents ? eventsPath : undefined,
+					updatedMs: Math.max(getPathMtimeMs(statusPath), getPathMtimeMs(eventsPath)),
+					statusData: hasStatus ? readJsonObject(statusPath) : undefined,
+				};
+			})
+			.filter((run): run is SubagentRunSummary => Boolean(run))
+			.sort((a, b) => b.updatedMs - a.updatedMs);
+	} catch (error) {
+		console.error(`Failed to inspect subagent runs: ${String(error)}`);
+		return [];
+	}
+}
+
+function formatIsoTime(ms: number): string {
+	return ms > 0 ? new Date(ms).toISOString() : "unknown";
+}
+
+function truncateInline(value: string, maxLength = 220): string {
+	const normalized = value.replace(/\s+/g, " ").trim();
+	if (normalized.length <= maxLength) return normalized;
+	return `${normalized.slice(0, maxLength - 1)}...`;
+}
+
+function formatSubagentRunLine(run: SubagentRunSummary): string {
+	const status = getStringField(run.statusData, ["status", "state", "result", "phase"]) ?? "unknown";
+	const agent = getStringField(run.statusData, ["agent", "subagent", "subagentType", "profile"]);
+	const mode = getStringField(run.statusData, ["mode", "workflow"]);
+	const summary = getStringField(run.statusData, ["summary", "message", "error"]);
+	const label = [agent ? `agent ${agent}` : undefined, mode ? `mode ${mode}` : undefined]
+		.filter((part): part is string => Boolean(part))
+		.join(", ");
+
+	return [
+		`- ${run.id}: ${status}${label ? ` (${label})` : ""}; updated ${formatIsoTime(run.updatedMs)}`,
+		summary ? `  ${truncateInline(summary)}` : undefined,
+		run.statusPath ? `  status: ${run.statusPath}` : undefined,
+		run.eventsPath ? `  events: ${run.eventsPath}` : undefined,
+	].filter((line): line is string => Boolean(line)).join("\n");
+}
+
+function renderSubagentRunsStatus(): string {
+	const root = getSubagentRunsRoot();
+	const runs = getSubagentRuns();
+	if (runs.length === 0) {
+		return [
+			"# Subagent Runs",
+			"",
+			`No async subagent run files were found at \`${root}\`.`,
+			"",
+			"Foreground subagents report back in the parent turn. Background subagents should create status and event files here while they run.",
+		].join("\n");
+	}
+
+	return [
+		"# Subagent Runs",
+		"",
+		`Root: \`${root}\``,
+		"",
+		...runs.slice(0, 12).map(formatSubagentRunLine),
+		runs.length > 12 ? `\n_${runs.length - 12} older run(s) hidden._` : undefined,
+	].filter((line): line is string => Boolean(line)).join("\n");
+}
+
+function parseEventLine(line: string): string {
+	try {
+		const event = JSON.parse(line) as JsonObject;
+		const time = getStringField(event, ["time", "timestamp", "createdAt", "updatedAt", "ts"]);
+		const type = getStringField(event, ["type", "event", "name", "phase", "level"]);
+		const message = getStringField(event, ["message", "summary", "output", "error", "text"]);
+		const prefix = [time, type].filter(Boolean).join(" ");
+		const body = message ?? line;
+		return truncateInline(prefix ? `${prefix}: ${body}` : body);
+	} catch {
+		return truncateInline(line);
+	}
+}
+
+function renderSubagentRunEvents(runId?: string): string {
+	const runs = getSubagentRuns();
+	const run = runId ? runs.find((candidate) => candidate.id.startsWith(runId)) : runs[0];
+	if (!run) return `No matching async subagent run found${runId ? ` for ${runId}` : ""}.`;
+	if (!run.eventsPath || !existsSync(run.eventsPath)) return `Run ${run.id} has no events.jsonl file.`;
+
+	const raw = readTextFile(run.eventsPath);
+	if (!raw?.trim()) return `Run ${run.id} has an empty events.jsonl file.`;
+	const lines = raw.trim().split(/\r?\n/).slice(-SUBAGENT_EVENT_PREVIEW_LINES).map(parseEventLine);
+	return [
+		`# Subagent Events: ${run.id}`,
+		"",
+		`Events: \`${run.eventsPath}\``,
+		run.statusPath ? `Status: \`${run.statusPath}\`` : undefined,
+		"",
+		...lines.map((line) => `- ${line}`),
+	].filter((line): line is string => Boolean(line)).join("\n");
 }
 
 function normalizeThinkingLevel(value: string | undefined): ThinkingLevel | undefined {
@@ -685,6 +852,10 @@ function getWorkflowArgumentCompletions(prefix: string) {
 
 function getBuilderArgumentCompletions(prefix: string) {
 	return BUILDER_COMMAND_COMPLETIONS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
+}
+
+function getSubagentRunArgumentCompletions(prefix: string) {
+	return SUBAGENT_RUN_COMMANDS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name }));
 }
 
 function getEffortArgumentCompletions(prefix: string) {
@@ -1096,21 +1267,24 @@ function buildBuilderDelegationSection(mode: BuilderDelegationMode): string {
 		return [
 			"Builder delegation: OFF",
 			"- Implement directly in the parent builder session.",
-			"- You may still use reviewer and planner child agents for the required review and acceptance workflow.",
-			"- Keep context compact manually: avoid large file dumps, summarize tool output, and run `/context compact` when needed.",
+			"- Prefer visible parent tool calls so the user can see exploration, edits, and validation as they happen.",
+			"- You may still use scout, reviewer, oracle, or planner child agents when explicitly useful, but keep implementation in the parent unless the user turns delegation on.",
+			"- Use background subagents only when the user explicitly asks for background work or the parent can make progress while a read-only scout runs.",
+			"- Keep context compact manually: avoid large file dumps, summarize tool output, use focused reads/searches, and run `/context compact` when needed.",
 		].join("\n");
 	}
 
 	return [
 		"Builder delegation: ON",
-		"- Default to keeping the parent builder session as the orchestrator for long or context-heavy coding work.",
-		`- Delegate bounded work to child agents when the task is multi-file, architecture-sensitive, exploratory, risky, based on a multi-step plan, likely to create large tool output, or parent context is at least ${BUILDER_DELEGATION_CONTEXT_THRESHOLD}% full.`,
-		"- If an approved plan is active and the user says to proceed, execute via a worker subagent first; do not start direct parent edits.",
+		"- Keep the parent builder session as the orchestrator for work that would otherwise burn too much parent context.",
+		`- Delegate bounded work to child agents when the user asks for delegation, parent context is at least ${BUILDER_DELEGATION_CONTEXT_THRESHOLD}% full, or the implementation is large enough that hiding tool chatter is worth the coordination cost.`,
+		"- A plan alone is not enough reason to delegate unless the user has turned delegation on for this session or the task is genuinely large.",
 		"- First inspect available agents with `subagent({ action: \"list\" })`, then call `subagent` with `agent: \"worker\"`, `context: \"fresh\"`, and a compact task capsule.",
 		"- Prefer scout/planner child agents for focused exploration or plan shaping, one worker child agent for implementation, reviewer for fresh review, and planner for acceptance.",
 		"- Do not use parallel editing workers. Parallel child agents are for read-only scouting or review angles.",
 		"- Send child agents a compact task capsule: goal, relevant paths, constraints, plan excerpt, expected output, and validation commands.",
 		"- Ask children to return only files changed, concise summary, validation evidence, unresolved risks, and blocking questions.",
+		"- Before starting a background child, tell the user what will run and then use `/subagent-runs status` or `/subagent-runs events` to surface progress paths when available.",
 		"- Keep raw exploration, logs, full file contents, and trial-and-error out of the parent context unless they are essential evidence.",
 		"",
 		SUBAGENT_CAPABILITY_POLICY,
@@ -1188,11 +1362,11 @@ function buildWorkflowSection(
 		lines.push(
 			"",
 			"Completion workflow:",
-			"- After implementation, send the diff through reviewer, preferably as a fresh child agent when delegation is on.",
-			"- Send reviewer findings to planner for acceptance; use the local `dev-planner` persona when switching personas, and `planner` when launching a child agent.",
+			"- For small, clear changes, implement directly, run the most relevant validation, and report the result.",
+			"- For nontrivial diffs, risky changes, or approved-plan work, run reviewer before calling the task done; use a child reviewer only when a fresh context is worth the wait.",
+			"- Use planner acceptance when there is an approved plan, an architecture-sensitive change, or a failing/ambiguous review. Use local `dev-planner` when switching personas and `planner` when launching a child.",
 			"- If planner returns `ACCEPTANCE: CHANGES_REQUESTED`, fix only accepted blocking issues and repeat review/acceptance, up to 3 total loops.",
-			"- After planner returns `ACCEPTANCE: ACCEPTED`, update architecture memory when the accepted change affects aim, targets, structure, data flow, principles, invariants, or validation.",
-			"- Only then report task completion to the user.",
+			"- After accepted architecture-sensitive changes, update architecture memory when the change affects aim, targets, structure, data flow, principles, invariants, or validation.",
 		);
 	}
 
@@ -1222,7 +1396,8 @@ function buildWorkflowSection(
 		"- `/path conversation|dev` to switch workflow path",
 		"- `/workflow status` to inspect persona, path, plan, tools, and builder mode",
 		"- `/builder status|on|off` to inspect or toggle builder delegation",
-		"- `/stop` to stop new tool calls; `/stop resume` to allow tools again",
+		"- `/subagent-runs status|events|paths` to inspect local async subagent run files",
+		"- `/stop` to abort current work when possible and block new tool calls; `/stop resume` to allow tools again",
 		"- `/plan` to inspect, create, edit, approve, or remove the active plan",
 		"- `/architecture` to inspect or edit project architecture memory",
 		"- `/effort` to inspect or override reasoning effort",
@@ -1740,7 +1915,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			? `${architectureBundle.documents.length} file(s) (${getRelativeArchitecturePath(ctx.cwd)})`
 			: `missing (${getRelativeArchitecturePath(ctx.cwd)})`;
 		const builderMode = getProfile(loadedProfiles, "builder")
-			? `delegation ${builderDelegationMode}; review loop: builder -> reviewer -> planner acceptance, max 3 loops`
+			? `delegation ${builderDelegationMode}; reviewer/planner acceptance is optional for small changes and capped at 3 loops when used`
 			: "builder profile unavailable";
 
 		return [
@@ -1751,6 +1926,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
 			`Architecture: ${architectureLabel}`,
 			`Builder mode: ${builderMode}`,
 			`Builder command: /builder status|on|off`,
+			`Subagent visibility: /subagent-runs status|events|paths`,
 			`Web tools: ${availableWebTools.length > 0 ? availableWebTools.join(", ") : "none active"}`,
 			`Aliases: planner → dev-planner, architect → dev-planner`,
 		].join("\n");
@@ -1784,6 +1960,38 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		}
 
 		await setBuilderDelegationMode(nextMode, ctx, { notify: true, persist: true });
+	}
+
+	async function handleSubagentRunsCommand(args: string, ctx: ExtensionContext): Promise<void> {
+		const tokens = args.trim().split(/\s+/).filter(Boolean);
+		const action = tokens[0]?.toLowerCase() || "status";
+		const runId = tokens[1];
+
+		if (action === "status" || action === "paths") {
+			pi.sendMessage(
+				{
+					customType: "pi-subagent-runs",
+					content: renderSubagentRunsStatus(),
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+			return;
+		}
+
+		if (action === "events") {
+			pi.sendMessage(
+				{
+					customType: "pi-subagent-events",
+					content: renderSubagentRunEvents(runId),
+					display: true,
+				},
+				{ triggerTurn: false },
+			);
+			return;
+		}
+
+		ctx.ui.notify(`Unknown /subagent-runs action "${action}". Try: ${SUBAGENT_RUN_COMMANDS.join(", ")}`, "error");
 	}
 
 	pi.registerFlag("persona", {
@@ -1864,6 +2072,14 @@ export default function personaExtension(pi: ExtensionAPI): void {
 		getArgumentCompletions: (prefix) => getBuilderArgumentCompletions(prefix),
 		handler: async (args, ctx) => {
 			await handleBuilderCommand(args, ctx);
+		},
+	});
+
+	pi.registerCommand("subagent-runs", {
+		description: "Show local async subagent status and event files",
+		getArgumentCompletions: (prefix) => getSubagentRunArgumentCompletions(prefix),
+		handler: async (args, ctx) => {
+			await handleSubagentRunsCommand(args, ctx);
 		},
 	});
 

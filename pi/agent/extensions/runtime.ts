@@ -67,6 +67,7 @@ const CONTEXT_COMMANDS = ["status", "refresh", "compact"];
 const MEMORY_COMMANDS = ["status", "show", "edit", "path", "on", "off"];
 const WORKTREE_COMMANDS = ["status", "create", "use", "off", "path", "list"];
 const STOP_COMMANDS = ["status", "resume"];
+const STOP_INPUT_PATTERN = /^\s*(stop|stop please|please stop|stop everything|cancel|cancel everything|abort|halt|pause)\s*[.!?]*\s*$/i;
 const PATH_PARAM_KEYS = new Set(["path", "file", "filePath", "filename", "targetPath"]);
 const PATH_ARRAY_PARAM_KEYS = new Set(["paths", "files", "filePaths"]);
 const MAX_PATH_SUGGESTIONS = 8;
@@ -347,7 +348,7 @@ function buildPathPromptSection(cwd: string, activeCwd: string): string {
 		`Active tool cwd: \`${getRelativeDisplayPath(cwd, activeCwd)}\``,
 		"- Prefer paths copied from `ls`, `find`, `grep`, or `git status` output.",
 		"- Before reading or editing a file after a path error, run `pwd` and `ls` or `find` to confirm the path from the active tool cwd.",
-		"- If the user says stop, pause work immediately and do not call tools again until they ask to continue.",
+			"- If the user asks to stop, pause work immediately and do not call tools again until they ask to continue.",
 	].join("\n");
 }
 
@@ -736,6 +737,17 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		}
 	}
 
+	function requestAgentStop(ctx: ExtensionContext): void {
+		setAgentStopped(true, ctx);
+		if (!ctx.isIdle()) {
+			ctx.abort();
+		}
+	}
+
+	function isStopInput(text: string): boolean {
+		return STOP_INPUT_PATTERN.test(text);
+	}
+
 	function getMemoryPromptSection(ctx: ExtensionContext): string {
 		const memoryText = readTextFile(getProjectMemoryPath(ctx.cwd))?.trim() ?? "";
 		const signature = JSON.stringify({
@@ -1020,8 +1032,14 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 			return;
 		}
 
-		setAgentStopped(true, ctx);
-		ctx.ui.notify("Agent stopped. New tool calls are blocked until /stop resume.", "warning");
+		const wasIdle = ctx.isIdle();
+		requestAgentStop(ctx);
+		ctx.ui.notify(
+			wasIdle
+				? "Agent stopped. New tool calls are blocked until /stop resume."
+				: "Agent stop requested. Current work was aborted and new tool calls are blocked until /stop resume.",
+			"warning",
+		);
 	}
 
 	function getContextCommandCompletions(prefix: string) {
@@ -1213,7 +1231,7 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
+		pi.on("session_start", async (_event, ctx) => {
 		memoryEnabled = getLatestCustomEntryData<MemoryState>(ctx, MEMORY_STATE_TYPE)?.enabled ?? true;
 		worktreeState = getLatestCustomEntryData<WorktreeState>(ctx, WORKTREE_STATE_TYPE) ?? { enabled: false };
 		agentStopped = getLatestCustomEntryData<StopState>(ctx, STOP_STATE_TYPE)?.stopped ?? false;
@@ -1233,6 +1251,26 @@ export default function runtimeExtension(pi: ExtensionAPI): void {
 		}
 		updateStatus(ctx);
 		maybeWarnAboutSensitiveMemory(ctx);
+	});
+
+	pi.on("input", async (event, ctx) => {
+		if (event.source !== "interactive" || event.text.trim().startsWith("/")) {
+			return { action: "continue" as const };
+		}
+
+		if (!isStopInput(event.text)) {
+			return { action: "continue" as const };
+		}
+
+		const wasIdle = ctx.isIdle();
+		requestAgentStop(ctx);
+		ctx.ui.notify(
+			wasIdle
+				? "Agent stopped. New tool calls are blocked until /stop resume."
+				: "Agent stop requested. Current work was aborted and new tool calls are blocked until /stop resume.",
+			"warning",
+		);
+		return { action: "handled" as const };
 	});
 
 	pi.on("tool_call", async (event) => {

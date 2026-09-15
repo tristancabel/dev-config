@@ -30,6 +30,7 @@ const guardrails = readJson(resolve(root, "pi/guardrails.json"));
 const suite = readJson(resolve(root, "pi/evals/model-comparison.json"));
 const subagents = readJson(resolve(root, "pi/subagents.capabilities.json"));
 const personaSource = readFileSync(resolve(root, "pi/agent/extensions/persona.ts"), "utf8");
+const runtimeSource = readFileSync(resolve(root, "pi/agent/extensions/runtime.ts"), "utf8");
 
 const packageSet = new Set(settings.packages ?? []);
 for (const required of ["npm:@aliou/pi-guardrails", "npm:pi-subagents", "npm:@juicesharp/rpiv-ask-user-question"]) {
@@ -73,13 +74,19 @@ check("worker is bounded editing agent", subagents.agents?.worker?.mayEditFiles 
 check("reviewer is read-only", subagents.agents?.reviewer?.mayEditFiles === false);
 
 for (const marker of [
+  'DEFAULT_BUILDER_DELEGATION_MODE: BuilderDelegationMode = "off"',
   "ACCEPTANCE_LINE_PATTERN",
   "REVIEW_LINE_PATTERN",
   "VERDICT_LINE_PATTERN",
   "getMissingPlanSections",
   "SUBAGENT_CAPABILITY_POLICY",
+  "subagent-runs",
 ]) {
   check(`persona workflow marker ${marker}`, personaSource.includes(marker));
+}
+
+for (const marker of ["STOP_INPUT_PATTERN", "requestAgentStop", "ctx.abort()"]) {
+  check(`runtime stop marker ${marker}`, runtimeSource.includes(marker));
 }
 
 if (failures.length > 0) {

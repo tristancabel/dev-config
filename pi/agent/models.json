@@ -97,7 +97,7 @@
     "dev-planner": {
       "provider": "omlx",
       "model": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
-      "thinkingLevel": "high"
+      "thinkingLevel": "medium"
     },
     "builder": {
       "provider": "omlx",
@@ -107,7 +107,7 @@
     "reviewer": {
       "provider": "omlx",
       "model": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
-      "thinkingLevel": "high"
+      "thinkingLevel": "medium"
     },
     "verifier": {
       "provider": "omlx",

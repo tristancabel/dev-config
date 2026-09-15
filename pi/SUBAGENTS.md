@@ -10,9 +10,9 @@ Use the normal profiles for everyday work:
 - `builder` for focused edits
 - `reviewer` and `verifier` for checks
 
-Builder delegation is on by default. Use `/builder off` to keep implementation in the parent builder session, and `/builder on` to restore delegated builder behavior.
+Builder delegation is off by default. Use `/builder on` only when a task is large enough that preserving parent context is worth the child-session overhead, and `/builder off` to return to visible parent-session implementation.
 
-Use subagents when a task benefits from another focused Pi session: long builder work, second opinions, parallel review, background scouting, review loops, or a clean fresh-context pass.
+Use subagents when a task benefits from another focused Pi session: second opinions, parallel review, background scouting, review loops, or a clean fresh-context pass. For normal coding work, direct parent implementation is faster and more observable.
 
 ## Installation
 
@@ -36,7 +36,7 @@ The current Pi session is the parent. A subagent is a child Pi session with a fo
 
 Subagents do not replace the local persona workflow. The parent should still decide the path, keep user-facing context coherent, and synthesize results. Children are best used as bounded specialists.
 
-With builder delegation on, the parent builder session acts as the orchestrator for long, multi-file, exploratory, risky, architecture-sensitive, or high-context implementation tasks. The child agent burns context privately; the parent receives only compact durable results.
+With builder delegation on, the parent builder session acts as the orchestrator for implementation tasks that would otherwise burn too much parent context. The child agent burns context privately; the parent receives only compact durable results. That tradeoff is useful for large jobs, but it also hides live tool output, so it should be deliberate.
 
 Task capsules sent to child agents should include only:
 
@@ -66,12 +66,14 @@ The explicit local capability policy is stored in [`subagents.capabilities.json`
 Good default pattern:
 
 ```text
-clarify -> plan -> implement -> fresh review -> planner acceptance -> architecture update
+clarify -> plan -> implement visibly -> validate -> review/accept only when risk justifies it -> architecture update when needed
 ```
 
 Use subagents sparingly with the local oMLX model. Parallel runs can multiply model load quickly.
 
 Do not use parallel editing workers. Parallel child agents are for read-only scouting or review angles.
+
+Use `/subagent-runs status` to inspect local async background run files and `/subagent-runs events [run-id-prefix]` to show the latest event tail. Foreground subagents report in the parent turn; background subagents should be treated as observable only through their status/event artifacts.
 
 ## First Commands
 
@@ -151,6 +153,13 @@ Check plugin setup:
 /subagents-doctor
 ```
 
+Check local async run files:
+
+```text
+/subagent-runs status
+/subagent-runs events
+```
+
 ## Recommended Local Workflows
 
 ### Second Opinion
@@ -175,7 +184,7 @@ Run parallel reviewers on the current diff:
 Then synthesize the findings and apply only high-confidence fixes.
 ```
 
-This is the best high-value use of subagents in this setup.
+This is the best high-value use of subagents in this setup because the parent still owns the implementation while reviewers supply independent checks.
 
 ### Background Scout
 
@@ -185,24 +194,25 @@ Use this when the parent can keep working while a child reads a wider area:
 Run scout in the background to map the plugin loading flow. Save a concise summary and risks.
 ```
 
-Avoid background workers unless the task is already well specified.
+Avoid background workers unless the task is already well specified and the user understands that progress will be visible through `/subagent-runs`, not normal parent-session tool output.
 
 ### Review Loop
 
-Use this for larger implementation work:
+Use this for larger or riskier implementation work:
 
 ```text
 Run a review loop on this change with a max of 3 rounds. Send reviewer findings to planner for acceptance each round, and apply only accepted blocking fixes.
 ```
 
-Keep the loop capped so local model usage stays predictable. After planner accepts the implementation, update `.pi/architecture.md` or a target split under `.pi/architecture/` if the accepted change altered the current architecture.
+Keep the loop capped so local model usage stays predictable. Skip the loop for small, obvious edits where direct validation is enough. After planner accepts an architecture-sensitive implementation, update `.pi/architecture.md` or a target split under `.pi/architecture/` if the accepted change altered the current architecture.
 
 ### Delegated Builder
 
 Use this for long implementation work that would otherwise saturate the parent context:
 
 ```text
-Builder delegation is on. Give worker a compact task capsule for the approved plan, then run reviewer and planner acceptance. Keep only summaries and validation evidence in the parent context.
+/builder on
+Give worker a compact task capsule for the approved plan, then run reviewer and planner acceptance. Keep only summaries and validation evidence in the parent context.
 ```
 
 The parent should integrate results, resolve blocking questions, and report completion only after review and planner acceptance.

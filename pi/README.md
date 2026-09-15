@@ -10,9 +10,9 @@
 
 ## Paths
 - Conversation path: use `conversation` for normal questions, internet lookup, source fetching, and concise answers.
-- Dev path: use `dev-planner → builder → reviewer → planner acceptance`; builder fixes accepted blocking findings and repeats review/acceptance up to 3 total loops. When launching a child agent for acceptance, use `planner`; `dev-planner` is the local persona name.
-- Builder delegation is on by default: for long, multi-file, exploratory, risky, architecture-sensitive, or high-context work, builder keeps the parent session as orchestrator and delegates bounded work to focused child agents.
-- After acceptance, builder updates `.pi/architecture.md` or `.pi/architecture/<target>.md` when the accepted change affects system aim, targets, structure, data flow, principles, invariants, or validation.
+- Dev path: use `dev-planner → builder → focused validation` for normal work. Add reviewer and planner acceptance for approved-plan work, risky/nontrivial diffs, architecture-sensitive changes, or ambiguous review findings.
+- Builder delegation is off by default so normal implementation stays visible in the parent session. Turn it on only when a task is large enough that preserving parent context is worth the child-session overhead.
+- After accepted architecture-sensitive changes, builder updates `.pi/architecture.md` or `.pi/architecture/<target>.md` when the change affects system aim, targets, structure, data flow, principles, invariants, or validation.
 - `/plan approve` marks a plan as ready and keeps useful status metadata, but builder edits are no longer hard-blocked by missing approval.
 - `/path conversation` switches to Q&A and web research.
 - `/path dev` switches to the dev-planner-first development workflow.
@@ -28,6 +28,9 @@
 - /builder status
 - /builder on
 - /builder off
+- /subagent-runs status
+- /subagent-runs events [run-id-prefix]
+- /subagent-runs paths
 - /stop
 - /stop status
 - /stop resume
@@ -68,8 +71,8 @@
 - hard read-only isolation for conversation, scout, and dev-planner
 - persistent project plan at `.pi/plans/active-plan.md`
 - architecture memory at `.pi/architecture.md`, with optional target splits under `.pi/architecture/`
-- guided builder workflow with reviewer plus planner acceptance, capped at 3 loops
-- default-on builder delegation for long-context coding work, with `/builder on|off`
+- guided builder workflow with optional reviewer plus planner acceptance, capped at 3 loops when used
+- default-off builder delegation for long-context coding work, with `/builder on|off`
 - explicit subagent capability policy at `subagents.capabilities.json`
 - internet research tools for conversation and read-only/review personas
 - explicit web-use policy per persona
@@ -90,7 +93,7 @@
 - project memory at `.pi/memory/project-memory.md`, with per-session opt-out
 - optional worktree-routed execution for risky edits and verification, stored under the host system temp directory
 - verifier focus and workflow prompts stay aligned with the active worktree
-- `/stop` blocks new tool calls until `/stop resume`
+- `/stop` requests abort of current work and blocks new tool calls until `/stop resume`
 - file-tool path normalization maps obvious repo-root-relative paths into the active cwd/worktree
 - failed file reads/edits include basename matches when the requested path appears to be in the wrong directory
 - project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
@@ -98,9 +101,10 @@
 - harness evals and model-comparison scenarios under `evals/`
 - session reporting with model, input/output tokens, prompt detail, elapsed time, and estimated equivalent manual effort; `/report` saves a Markdown file by default
 - subagent delegation for long builder tasks, second opinions, parallel review, chains, and background scouting
+- `/subagent-runs` visibility for local async subagent status and event files
 
 ## Subagents
-This setup includes `pi-subagents` for child-agent delegation. Builder delegation is on by default and can be toggled with `/builder on` or `/builder off`.
+This setup includes `pi-subagents` for child-agent delegation. Builder delegation is off by default so parent-session tool calls remain visible; toggle it with `/builder on` only for large context-heavy work.
 
 Use it when a task benefits from another focused Pi session:
 - `scout` for fresh-context exploration before implementation
@@ -109,7 +113,9 @@ Use it when a task benefits from another focused Pi session:
 - `reviewer` for fresh review, parallel review, and review loops
 - `oracle` for second opinions before risky decisions
 
-Keep the parent session as the orchestrator. Child agents should receive compact task capsules and return concise results only: changed files, summary, validation evidence, unresolved risks, and blocking questions. For everyday small edits and direct questions, the normal persona workflow is simpler.
+Keep the parent session as the orchestrator. Child agents should receive compact task capsules and return concise results only: changed files, summary, validation evidence, unresolved risks, and blocking questions. For everyday small edits and direct questions, the normal persona workflow is simpler and faster.
+
+Use `/subagent-runs status` to inspect async background run status files and `/subagent-runs events [run-id-prefix]` to show the latest event tail when a background child is running.
 
 See [`SUBAGENTS.md`](SUBAGENTS.md) for a tutorial and recommended local workflows.
 

@@ -10,3 +10,5 @@ eln-cache
 !.pi/architecture.md
 !.pi/architecture/
 !.pi/architecture/*.md
+pi/agent/missions
+pi/agent/pi-reports

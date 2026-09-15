@@ -1,0 +1,7 @@
+{"agent":"worker","task":"[redacted]","taskHash":"7a93701ab63b8652c2242bc33fa4fd602f0480eeb8cb1b441a504df1b1952fce","ts":1788337017,"status":"ok","duration":426620}
+{"agent":"reviewer","task":"[redacted]","taskHash":"ba1714d118b96e4740c0e264a2218faff5b38f988d2e6fb7df5c39bec5dd59de","ts":1788337893,"status":"ok","duration":839414}
+{"agent":"oracle","task":"[redacted]","taskHash":"b7bc9e90423c257417145df859a6b439611f520fff686798b878d5fde7430fa4","ts":1788338406,"status":"ok","duration":205489}
+{"agent":"worker","task":"[redacted]","taskHash":"e247ac4892400f90df7c6827b23bddc4a2369e3b9b788ef4548a03cacfb88b07","ts":1788342377,"status":"error","duration":3029062,"exit":1}
+{"agent":"worker","task":"[redacted]","taskHash":"cb49e8a428e62f2bddfbd7cb2ab96fd15769fcf20c5dcb17e37272e3e7b6d377","ts":1788352219,"status":"error","duration":947589,"exit":1}
+{"agent":"worker","task":"[redacted]","taskHash":"eb7e33e809a0bd759505ce5f1b77780560e455bd0c76aab9705d8e7d5a5b9650","ts":1788354060,"status":"error","duration":713527,"exit":1}
+{"agent":"delegate","task":"[redacted]","taskHash":"a49413040428ba0fe8906e27a7ae9c05fdb02ae12fba6a8f4427e0167401aaf8","ts":1788354685,"status":"ok","duration":289432}
