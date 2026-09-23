@@ -5,16 +5,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 AGENT="tau"
+AGENT_SELECTED=false
 LINK_CONFIG=true
 
 usage() {
   cat <<'HELP'
 Usage: ./install.sh [pi|tau] [--no-links]
-       ./install.sh --agent pi|tau [--no-links]
 
 Install Emacs and one coding agent (default: tau).
+The Tau installation also includes Funes for local session recall.
   pi, tau          Choose the coding agent.
-  --agent NAME     Choose the coding agent explicitly.
   --no-links       Install tools without linking configuration.
   -h, --help       Show this help.
 
@@ -25,24 +25,20 @@ HELP
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    pi|tau) AGENT="$1"; shift ;;
-    --agent)
-      if [[ $# -lt 2 ]]; then
-        echo "ERROR: --agent requires pi or tau." >&2
+    pi|tau)
+      if [[ "$AGENT_SELECTED" == true ]]; then
+        echo "ERROR: Choose only one agent: pi or tau." >&2
         exit 1
       fi
-      AGENT="$2"
-      shift 2
+      AGENT="$1"
+      AGENT_SELECTED=true
+      shift
       ;;
     --no-links) LINK_CONFIG=false; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "ERROR: Unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
 done
-case "$AGENT" in
-  pi|tau) ;;
-  *) echo "ERROR: Agent must be pi or tau: $AGENT" >&2; exit 1 ;;
-esac
 
 case "$(uname -s)" in
   Darwin) PKG_MANAGER="brew" ;;
@@ -78,6 +74,22 @@ if [[ "$AGENT" == "tau" ]]; then
     echo "-- Installing Tau with Pixi..."
     pixi global install tau-ai
   fi
+
+  FUNES_BIN_DIR="${FUNES_INSTALL_DIR:-$HOME/.local/bin}"
+  if ! command -v funes >/dev/null 2>&1 && [[ -x "$FUNES_BIN_DIR/funes" ]]; then
+    export PATH="$FUNES_BIN_DIR:$PATH"
+  fi
+  if command -v funes >/dev/null 2>&1; then
+    echo "-- Reusing Funes: $(command -v funes)"
+  else
+    echo "-- Installing Funes..."
+    # Official installer verifies the release checksum and binary version.
+    curl -fsSL https://huggingface.co/buckets/huggingface/funes/resolve/install.sh | sh
+    export PATH="$FUNES_BIN_DIR:$PATH"
+    command -v funes >/dev/null 2>&1 || { echo "ERROR: Funes was not found after installation." >&2; exit 1; }
+  fi
+  echo "-- Funes is available. Index old Pi history when ready: funes index --harness pi"
+  echo "-- Ensure $FUNES_BIN_DIR is on your shell PATH before launching Tau."
 else
   echo "-- Preparing Node.js for Pi..."
   if ! command -v npm >/dev/null 2>&1; then

@@ -19,7 +19,7 @@ Dotfiles for **Emacs** and the **Pi or Tau coding agent**.
 ## Quick Install
 
 ```bash
-./install.sh tau          # Default; reuse Pixi, install Tau through Pixi if needed
+./install.sh tau          # Default; install Tau and Funes, reuse existing tools
 ./install.sh pi           # Install Pi and its plugins instead
 ./install.sh tau --no-links # Install tools; manage config links yourself
 ```

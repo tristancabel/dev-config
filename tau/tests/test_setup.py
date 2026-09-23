@@ -126,8 +126,29 @@ class Tests(unittest.IsolatedAsyncioTestCase):
             query = '--memory remote/repo; rm -rf .'
             output = await self.api.tools['funes_recall'].execute_fn('id', {'query': query})
             self.assertEqual(spawn.call_args.args,
-                             ('/trusted/funes', 'recall', '--memory', 'local', '-k', '5', '--', query))
+                             ('/trusted/funes', 'recall', '--memory', 'local', '-k', '5', '--half-life', '30', '--', query))
             self.assertIn('past decision', output.content[0].text)
+
+    async def test_funes_context_validation_and_chat_access(self):
+        memory = load('memory')
+        memory.setup(self.api)
+        process = SimpleNamespace(returncode=0, communicate=AsyncMock(return_value=(b'source turns', b'')))
+        with patch.object(memory.shutil, 'which', return_value='/trusted/funes'), patch.object(
+            memory.asyncio, 'create_subprocess_exec', AsyncMock(return_value=process)
+        ) as spawn:
+            get = self.api.tools['funes_get'].execute_fn
+            await get('id', {'session_id': 'abc', 'from_seq': -1, 'to_seq': 5})
+            spawn.assert_not_called()
+            await get('id', {'session_id': 'abc', 'from_seq': 3, 'to_seq': 7})
+            self.assertEqual(spawn.call_args.args,
+                             ('/trusted/funes', 'get', '--memory', 'local', '--from', '3', '--to', '7', '--', 'abc'))
+            await self.api.tools['funes_recall'].execute_fn('id', {'query': 'research', 'half_life': 0})
+            self.assertIn('0', spawn.call_args.args)
+            await self.api.tools['funes_status'].execute_fn('id', {})
+            self.assertEqual(spawn.call_args.args, ('/trusted/funes', 'status'))
+        self.api.commands['mode']('chat', self.context)
+        for name in ('funes_recall', 'funes_get', 'funes_status'):
+            self.assertIsNone(await self.call(name))
 
     def test_real_tau_loader_and_catalog(self):
         paths = TauPaths(home=ROOT, agents_home=self.root / 'agents')
@@ -135,7 +156,7 @@ class Tests(unittest.IsolatedAsyncioTestCase):
         runtime.load(TauResourcePaths(root=ROOT, cwd=self.cwd, agents_root=self.root / 'agents', paths=paths))
         self.assertFalse(runtime.diagnostics, runtime.diagnostics)
         self.assertEqual({t.name for t in runtime.extension_tools},
-                         {'web_search', 'memory_read', 'memory_save', 'funes_recall'})
+                         {'web_search', 'memory_read', 'memory_save', 'funes_recall', 'funes_get', 'funes_status'})
         settings = load_provider_settings(paths)
         self.assertEqual(settings.get_provider('omlx').base_url, 'http://127.0.0.1:8000/v1')
 

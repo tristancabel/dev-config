@@ -54,7 +54,7 @@ def setup(tau):
             return None
         if name == 'bash' and mode == 'chat':
             return ToolCallHookResult(block=True, reason='Chat mode blocks shell execution.')
-        if name in {'web_search', 'memory_read', 'memory_save', 'funes_recall'}:
+        if name in {'web_search', 'memory_read', 'memory_save', 'funes_recall', 'funes_get', 'funes_status'}:
             return None  # These reviewed extensions enforce narrow inputs/confirmation.
         if not context.has_ui:
             return ToolCallHookResult(block=True, reason='This tool requires interactive approval.')

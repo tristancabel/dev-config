@@ -3,8 +3,8 @@
 For **Hugging Face Tau (`tau-ai`) 0.4.4**, verified against the locally installed
 package on 2026-09-23. This directory is prepared to become `~/.tau`; nothing here
 installs software, creates symlinks, starts servers, or changes your existing Pi setup.
-Run `./install.sh tau` from the repository root to install Tau (using existing Pixi
-when available) and link configuration where destinations do not already exist.
+Run `./install.sh tau` from the repository root to install Tau and Funes (reusing
+existing installations) and link configuration where destinations do not already exist.
 Use `./install.sh tau --no-links` to manage symlinks yourself. The installer
 preserves existing configuration directories; migrate them as described below.
 
@@ -110,9 +110,12 @@ stops accepting additions at roughly 20 KB so it remains easy to curate. Existin
 facts are historical data, not instructions. No automatic transcript recording,
 embedding downloads, indexing, or cloud sync is added by these extensions.
 
-Funes is an optional second layer for **session evidence**, not the fact store.
-Install it separately using the [official instructions](https://github.com/huggingface/funes),
-then deliberately index your Pi history:
+Funes provides a second layer for **session evidence**, not the fact store.
+The Tau installer installs its CLI using the [official installer](https://github.com/huggingface/funes#get-funes),
+or reuses it when already installed. It does not automatically index or publish
+sessions. For manual installation, follow the [official instructions](https://github.com/huggingface/funes).
+Ensure `~/.local/bin` (or your `FUNES_INSTALL_DIR`) is on your shell PATH, then
+deliberately index your Pi history:
 
 ```bash
 funes index --harness pi
@@ -120,7 +123,19 @@ funes status
 ```
 
 `funes_recall` invokes a fixed, read-only `funes recall --memory local` command
-without a shell. It never indexes or publishes data. First Funes use may download
+and supports `half_life=0` for reference material without recency bias.
+`funes_get` opens the source turns behind a hit; `funes_status` checks index status.
+Tau is instructed to retrieve relevant saved knowledge before repeating research,
+verify important hits in context, and cite their provenance. These tools also work
+in chat mode. No index is injected wholesale into the prompt.
+
+If you index with a custom `FUNES_HOME`, export the same value before launching
+Tau so it reads the same index. Otherwise it uses Funes's default `~/.funes`.
+Restart Tau or run `/reload` after updating the extensions and prompt.
+Try: “Use my indexed research on X, check the source context, and summarize it.”
+
+All Funes tools run
+without a shell. They never index or publish data. First Funes use may download
 its retrieval models. Retrieved passages are supplied to whichever model provider
 you selected, so “local index” does not imply a hosted model never sees excerpts.
 
