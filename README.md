@@ -1,6 +1,6 @@
 # dev-config
 
-Dotfiles for **Emacs** and the **Pi coding agent**.
+Dotfiles for **Emacs** and the **Pi or Tau coding agent**.
 
 ## Directory Structure
 
@@ -11,6 +11,7 @@ Dotfiles for **Emacs** and the **Pi coding agent**.
 │   ├── guardrails.json Safety rules for Pi tool execution
 │   ├── hooks/          Pi lifecycle hooks
 │   └── start-omlx-server.sh oMLX local model server launcher
+├── tau/                Tau configuration, safeguards, web search, and fact memory
 ├── install.sh          Bootstrap script (macOS + Linux)
 └── README.md           This file
 ```
@@ -18,8 +19,14 @@ Dotfiles for **Emacs** and the **Pi coding agent**.
 ## Quick Install
 
 ```bash
-./install.sh
+./install.sh tau          # Default; reuse Pixi, install Tau through Pixi if needed
+./install.sh pi           # Install Pi and its plugins instead
+./install.sh tau --no-links # Install tools; manage config links yourself
 ```
+
+The installer reuses an existing Pixi installation and preserves existing config
+directories and symlinks. Conflicting destinations are reported for manual migration.
+See [Tau setup](tau/README.md) before migrating an existing `~/.tau` directory.
 
 Or manually:
 

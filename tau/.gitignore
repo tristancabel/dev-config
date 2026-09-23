@@ -1,0 +1,12 @@
+# Runtime data when symlinked as ~/.tau
+credentials.json
+providers.json
+trust.json*
+sessions/
+state/
+cache/
+logs/
+memory/
+*store.json
+__pycache__/
+*.pyc

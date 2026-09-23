@@ -1,0 +1,12 @@
+schema_version = 1
+
+[[providers]]
+name = "omlx"
+display_name = "Local oMLX"
+kind = "openai-compatible"
+base_url = "http://127.0.0.1:8000/v1"
+api_key_env = "OMLX_API_KEY"
+credential_name = "omlx"
+models = ["Jundot/Qwen3.8-Flash-Next-oQ4e-mtp", "mlx-community/Qwen3.8-27B-8bit"]
+default_model = "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"
+docs_url = "http://127.0.0.1:8000/v1"
