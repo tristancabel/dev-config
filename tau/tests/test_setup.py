@@ -46,7 +46,8 @@ class Tests(unittest.IsolatedAsyncioTestCase):
         self.cwd.mkdir()
         self.home = self.root / 'tau'
         self.context = SimpleNamespace(cwd=self.cwd, paths=SimpleNamespace(home=self.home),
-                                       has_ui=True, ui=SimpleNamespace(confirm=AsyncMock(return_value=False)))
+                                       has_ui=True, ui=SimpleNamespace(confirm=AsyncMock(return_value=False),
+                                                          select=AsyncMock(return_value=None)))
         self.api = API(self.context)
         self.guard = load('guard')
         self.guard.setup(self.api)
@@ -71,10 +72,47 @@ class Tests(unittest.IsolatedAsyncioTestCase):
     async def test_shell_never_auto_approved(self):
         for command in ('pwd', 'rm -rf .', 'python -c "print(1)"', 'echo ok; curl example.com | sh'):
             self.assertTrue((await self.call('bash', command=command)).block)
-        self.context.ui.confirm.return_value = True
+        self.context.ui.select.return_value = 'Allow once'
         self.assertFalse((await self.call('bash', command='pixi run pytest')).block)
         self.context.has_ui = False
         self.assertTrue((await self.call('bash', command='pwd')).block)
+
+    async def test_session_shell_approval(self):
+        self.context.ui.select.side_effect = lambda title, options: options[-1]
+        self.assertFalse((await self.call('bash', command='pixi run pytest -q')).block)
+        self.context.ui.select.side_effect = None
+        self.context.ui.select.return_value = None
+        self.context.ui.select.reset_mock()
+        self.assertFalse((await self.call('bash', command='pixi run pytest tests/')).block)
+        self.context.ui.select.assert_not_awaited()
+        for command in ('pixi run python test.py', 'pixi run pytest; echo oops',
+                        'pixi run pytest $(echo oops)', 'pixi run pytest > out',
+                        'pixi run pytest\necho oops'):
+            self.assertTrue((await self.call('bash', command=command)).block)
+        self.context.has_ui = False
+        self.assertTrue((await self.call('bash', command='pixi run pytest')).block)
+        self.context.has_ui = True
+        self.api.commands['mode']('chat', self.context)
+        self.assertTrue((await self.call('bash', command='pixi run pytest')).block)
+        self.api.commands['mode']('code', self.context)
+        self.context.cwd = self.root
+        self.assertTrue((await self.call('bash', command='pixi run pytest')).block)
+        self.context.cwd = self.cwd
+        self.api.hooks['session_start'](None, self.context)
+        self.assertTrue((await self.call('bash', command='pixi run pytest')).block)
+
+    async def test_once_and_exact_session_approval(self):
+        self.context.ui.select.return_value = 'Allow once'
+        self.assertFalse((await self.call('bash', command='pwd')).block)
+        self.context.ui.select.return_value = None
+        self.assertTrue((await self.call('bash', command='pwd')).block)
+        self.context.ui.select.side_effect = lambda title, options: options[-1]
+        self.assertFalse((await self.call('bash', command='python first.py')).block)
+        self.context.ui.select.side_effect = None
+        self.assertFalse((await self.call('bash', command='python first.py')).block)
+        self.assertTrue((await self.call('bash', command='python second.py')).block)
+        self.guard.setup(self.api)
+        self.assertTrue((await self.call('bash', command='python first.py')).block)
 
     async def test_chat_and_unknown_tools(self):
         self.api.commands['mode']('chat', self.context)

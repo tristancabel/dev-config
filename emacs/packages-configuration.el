@@ -1,4 +1,4 @@
-;;; package --- config
+;;; packages-configuration.el --- Package configuration -*- lexical-binding: t; -*-
 ;;; Commentary:
 ;;; packages configurations
 ;;;
@@ -373,8 +373,9 @@
         (when path
           (throw 'match path))))))
 
-(defun my/eglot-cpp-contact ()
-  "Return the Eglot server command for C and C++ (clangd)."
+(defun my/eglot-cpp-contact (&optional _interactive _project)
+  "Return the Eglot server command for C and C++ (clangd).
+Accept Eglot's INTERACTIVE and PROJECT arguments without using them."
   (let ((clangd (or (my/find-executable my/clangd-executable-candidates)
                     "clangd")))
     `(,clangd

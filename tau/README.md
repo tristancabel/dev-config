@@ -22,7 +22,7 @@ use the existing session history for unfinished work.
 | Web search | `web_search`: five Brave results with URLs and snippets |
 | Durable facts | `memory_read` and confirmed `memory_save`, project/global scope |
 | Old-session recall | Optional `funes_recall`, local index only |
-| Safeguards | Project file boundary, protected paths, approval for every shell command |
+| Safeguards | Project file boundary, protected paths, session-scoped shell approvals |
 
 My recommendation from the current upstream direction is to use a small harness,
 a few focused tools, and explicit retrieval rather than recreate the Pi workflow
@@ -155,8 +155,15 @@ current directory, including symlink resolution; known credential filenames and
 configuration directories are denied. Regular project edits are allowed in code
 mode. This is a conservative filename policy, not a secret detector.
 
-**Every shell command asks**, including tests and apparently read-only commands.
-Approval is once per call. Unknown tools also ask. Headless mode denies these
+**Shell commands ask unless you approve them for the session.** The picker offers
+Deny, Allow once, and (for simple commands) Allow for this session, displaying the
+exact prefix being approved. For example, `pixi run pytest` covers subsequent
+pytest arguments but not `pixi run python`. Common command families use a command
+or task prefix; other executables (including interpreters) require an exact command
+match. Shell operators, substitutions, and other complex syntax always ask.
+Approvals apply only in the same working directory and clear on session changes,
+restart, or `/reload`. Chat mode still blocks shell execution. Unknown tools ask
+for approval each time. Headless mode denies these
 calls and memory writes because there is no interactive approval. No regex tries
 to prove arbitrary shell code safe. Inspect commands before approving them:
 a test, interpreter, script, Git hook, or package manager can execute other code.
