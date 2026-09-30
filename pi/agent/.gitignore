@@ -1,0 +1,7 @@
+# Runtime state written by Pi; not configuration. Keep secrets and session
+# data out of the repository.
+auth.json
+models-store.json
+run-history.jsonl
+sessions/
+web-search-cache/

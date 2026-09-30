@@ -1,15 +1,15 @@
 {
   "deny": [
     {
-      "command": "^rm\\s+-rf\\s+/",
-      "message": "Nice try, but I like my root directory where it is."
+      "command": "^rm\\s+(-\\S+\\s+)*[/~]",
+      "message": "Nice try, but I like my root and home directories where they are."
     },
     {
-      "command": "^pip install.*",
+      "command": "^pip3?\\s+install.*",
       "message": "STOP. Use 'pixi add' or 'pixi run pip install' to stay inside the environment."
     },
     {
-      "command": "^python -m pip.*",
+      "command": "^python3?\\s+-m\\s+pip.*",
       "message": "Global pip detected. Please use the Pixi toolchain."
     },
     {
@@ -21,17 +21,17 @@
       "message": "Filesystem formatting is not allowed."
     },
     {
-      "command": "^dd \\s+if=",
+      "command": "^dd\\s+if=",
       "message": "Raw disk writing with dd is not allowed."
     },
     {
-      "command": "^: \\s*> \\s*/dev/",
+      "command": "^:\\s*>\\s*/dev/",
       "message": "Redirecting to device files is not allowed."
     }
   ],
   "confirm": [
     {
-      "command": "^rm\\s+-rf\\s+\\.",
+      "command": "^rm\\s+-\\S*[rR]\\S*(\\s|$)",
       "message": "Are you sure you want to delete these files recursively?"
     },
     {

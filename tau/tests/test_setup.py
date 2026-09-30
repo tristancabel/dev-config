@@ -59,6 +59,8 @@ class Tests(unittest.IsolatedAsyncioTestCase):
         for path in ('../other.txt', '/etc/hosts', '.env', '.env.local', '.git/config', 'key.pem', '.agents/a.md'):
             with self.subTest(path=path):
                 self.assertTrue((await self.call('read', path=path)).block)
+        self.assertIsNone(await self.call('read', path='.env.example'),
+                           'committed example env files are safe to read')
         self.assertIsNone(await self.call('write', path='src/new.py'))
         (self.cwd / 'escape').symlink_to(self.root)
         self.assertTrue((await self.call('read', path='escape/secret')).block)
@@ -133,6 +135,11 @@ class Tests(unittest.IsolatedAsyncioTestCase):
         await save('id', {'fact': 'Use Pixi'})
         path = memory.memory_path(self.home, self.cwd, 'project')
         self.assertIn('Use Pixi', path.read_text())
+        self.assertTrue(path.read_text().startswith(f'# Project facts: {self.cwd.resolve()}'),
+                        'project memory files must record their project path for manual curation')
+        await save('id', {'fact': 'Prefer concise answers', 'scope': 'global'})
+        global_path = memory.memory_path(self.home, self.cwd, 'global')
+        self.assertTrue(global_path.read_text().startswith('- '), 'global memory gets no project header')
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         other = API(self.context)
         memory.setup(other)

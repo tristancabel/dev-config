@@ -38,30 +38,7 @@ Subagents do not replace the local persona workflow. The parent should still dec
 
 With builder delegation on, the parent builder session acts as the orchestrator for implementation tasks that would otherwise burn too much parent context. The child agent burns context privately; the parent receives only compact durable results. That tradeoff is useful for large jobs, but it also hides live tool output, so it should be deliberate.
 
-Task capsules sent to child agents should include only:
-
-- goal
-- relevant paths
-- constraints
-- active plan excerpt
-- expected output
-- validation commands
-
-Child agents should return only:
-
-- files changed
-- concise summary
-- validation evidence
-- unresolved risks
-- blocking questions
-
-The explicit local capability policy is stored in [`subagents.capabilities.json`](subagents.capabilities.json). Treat it as the source of truth when deciding what a child agent may do:
-
-- `scout`, `researcher`, and `oracle` are read-only.
-- `reviewer` is review-runner only: it may inspect and validate, but should not mutate the repo.
-- `worker` is the only default editing child, and it should receive one bounded task capsule.
-- `delegate` is a fallback, not the default for privileged work.
-- Parallel child agents must be read-only; do not run parallel editing workers.
+Task capsules, return contents, per-agent tool permissions, and edit rights are all defined in [`subagents.capabilities.json`](subagents.capabilities.json). Treat it as the source of truth when deciding what a child agent may do. The short version: `scout`, `researcher`, and `oracle` are read-only; `reviewer` validates without mutating the repo; `worker` is the only editing child and takes one bounded capsule; `delegate` is a fallback; parallel children must be read-only.
 
 Good default pattern:
 
@@ -70,8 +47,6 @@ clarify -> plan -> implement visibly -> validate -> review/accept only when risk
 ```
 
 Use subagents sparingly with the local oMLX model. Parallel runs can multiply model load quickly.
-
-Do not use parallel editing workers. Parallel child agents are for read-only scouting or review angles.
 
 Use `/subagent-runs status` to inspect local async background run files and `/subagent-runs events [run-id-prefix]` to show the latest event tail. Foreground subagents report in the parent turn; background subagents should be treated as observable only through their status/event artifacts.
 

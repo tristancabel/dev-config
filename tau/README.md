@@ -111,9 +111,11 @@ included. [API reference](https://api-dashboard.search.brave.com/app/documentati
 
 Facts are small plain-text Markdown files under `~/.tau/memory/`, ignored by Git:
 `global.md` for cross-project preferences, and a hash of the canonical working
-directory for each project's facts. Launch from the same project root to reuse
-its facts. Nothing is saved until you confirm it. The model retrieves facts on
-demand through `memory_read`; they are not all injected into every prompt.
+directory for each project's facts. Each project file starts with a
+`# Project facts: <path>` header line so you can identify it while curating.
+Launch from the same project root to reuse its facts. Nothing is saved until you
+confirm it. The model retrieves facts on demand through `memory_read`; they are
+not all injected into every prompt.
 
 To correct or forget something, edit/delete its Markdown entry manually. A file
 stops accepting additions at roughly 20 KB so it remains easy to curate. Existing

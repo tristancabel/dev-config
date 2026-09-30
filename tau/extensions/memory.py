@@ -15,6 +15,10 @@ def memory_path(home, cwd, scope):
     return Path(home) / 'memory' / f'{name}.md'
 
 
+def project_header(cwd):
+    return f'# Project facts: {Path(cwd).resolve()}\n'
+
+
 def result(text):
     return AgentToolResult(content=[TextContent(text=text)])
 
@@ -44,7 +48,9 @@ def setup(tau):
         if path.exists() and path.stat().st_size > 20000:
             return result('Memory is full; curate the Markdown file manually before adding more.')
         stamp = datetime.now(timezone.utc).date().isoformat()
+        header = project_header(tau.context.cwd) if scope == 'project' and not path.exists() else ''
         with path.open('a', encoding='utf-8') as stream:
+            stream.write(header)
             stream.write(f"- {stamp}: {' '.join(fact.split())}\n")
         path.chmod(0o600)
         return result(f'Saved in {scope} memory.')

@@ -22,7 +22,7 @@ def file_problem(raw, cwd, tau_home):
         if any(p.lower() in protected for p in path.parts):
             return 'Protected configuration or credential directory.'
         name = path.name.lower()
-        if (name == '.env' or name.startswith('.env.') or
+        if (name == '.env' or (name.startswith('.env.') and name not in {'.env.example', '.env.sample'}) or
                 name in {'credentials.json', 'auth.json', 'id_rsa', 'id_ed25519', '.netrc', '.npmrc'} or
                 path.suffix.lower() in {'.pem', '.key', '.p12', '.pfx'}):
             return 'Potential secret file; inspect it manually.'

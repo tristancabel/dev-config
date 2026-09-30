@@ -78,7 +78,7 @@ The oMLX server API key is configured in `~/.omlx/settings.json` under `auth.api
 
 ### Architecture Memory
 
-Pi projects use `.pi/architecture.md` as durable current-state architecture memory, with optional target splits under `.pi/architecture/`. Dev personas read this memory during planning, building, review, and validation, and builder updates it after planner acceptance for architecture-sensitive changes.
+Pi projects use `.pi/architecture.md` as durable current-state architecture memory, with optional target splits under `.pi/architecture/`. When personas read and update this memory is defined in the role prompts under `pi/extensions/`; see [`pi/README.md`](pi/README.md) for the source-of-truth map.
 
 ### Extensions
 

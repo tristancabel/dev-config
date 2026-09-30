@@ -1,5 +1,18 @@
 # Pi Advanced Setup
 
+## Source of truth
+
+Behavior lives in the code, not in this file. The canonical definitions are:
+
+- `agent/extensions/persona.ts` — personas, paths, `/workflow`, `/plan`, `/architecture`, `/builder`, `/stop`, `/subagent-runs`
+- `agent/extensions/runtime.ts`, `report.ts`, `lang-control.ts`, `omlx-startup.ts` — runtime details, reporting, language pinning, local model launch
+- `extensions/*.ts` — shared workflow guidance and the per-persona role prompts (scout, dev-planner, builder, reviewer)
+- `guardrails.json`, `subagents.capabilities.json`, `agent/models.json`, `agent/profiles.json` — declarative policy
+- `evals/check-harness.mjs` — executable contract for the above
+
+This README documents installation and usage. When prose and code disagree, the
+code wins; run `node pi/evals/check-harness.mjs` after config changes.
+
 ## Funes session memory
 
 Run `funes add pi local` to install the official Pi extension with local retrieval
@@ -18,17 +31,15 @@ sessions. Check the shared index with `funes status`.
 - verifier → executable validation with a required verdict
 
 ## Paths
-- Conversation path: use `conversation` for normal questions, internet lookup, source fetching, and concise answers.
-- Dev path: use `dev-planner → builder → focused validation` for normal work. Add reviewer and planner acceptance for approved-plan work, risky/nontrivial diffs, architecture-sensitive changes, or ambiguous review findings.
-- Builder delegation is off by default so normal implementation stays visible in the parent session. Turn it on only when a task is large enough that preserving parent context is worth the child-session overhead.
-- After accepted architecture-sensitive changes, builder updates `.pi/architecture.md` or `.pi/architecture/<target>.md` when the change affects system aim, targets, structure, data flow, principles, invariants, or validation.
-- `/plan approve` marks a plan as ready and keeps useful status metadata, but builder edits are no longer hard-blocked by missing approval.
-- `/path conversation` switches to Q&A and web research.
-- `/path dev` switches to the dev-planner-first development workflow.
-- `/workflow status` shows active path, persona, plan status, active web tools, and builder mode.
-- `/builder on|off|status` toggles or inspects builder delegation.
+- Conversation path: `conversation` for normal questions, internet lookup, and concise answers.
+- Dev path: `dev-planner → builder → focused validation` for normal work; add reviewer and planner acceptance for approved-plan, risky, or architecture-sensitive work.
+- Switch with `/path conversation|dev`, inspect with `/workflow status`, and toggle builder delegation with `/builder on|off|status`.
+
+What each persona does is defined in `agent/profiles.json` and the role prompts in `extensions/*.ts`.
 
 ## Commands
+Quick reference only; the registered set lives in `agent/extensions/*.ts`.
+
 - /persona
 - /path status
 - /path conversation
@@ -74,57 +85,23 @@ sessions. Check the shared index with `funes status`.
 - /subagents-doctor
 
 ## Features
-- declarative persona profiles
-- role-aware permission modes
-- automatic oMLX server launch on Pi session start via `start-omlx-server.sh`
-- hard read-only isolation for conversation, scout, and dev-planner
-- persistent project plan at `.pi/plans/active-plan.md`
+Index only; see [Source of truth](#source-of-truth) for where each is implemented.
+
+- declarative persona profiles with role-aware permission modes; hard read-only isolation for conversation, scout, and dev-planner
+- workflow paths, dashboard, and plan management (`/path`, `/workflow`, `/plan`)
 - architecture memory at `.pi/architecture.md`, with optional target splits under `.pi/architecture/`
-- guided builder workflow with optional reviewer plus planner acceptance, capped at 3 loops when used
-- default-off builder delegation for long-context coding work, with `/builder on|off`
-- explicit subagent capability policy at `subagents.capabilities.json`
-- internet research tools for conversation and read-only/review personas
-- explicit web-use policy per persona
-- workflow path switching with `/path`
-- quick workflow dashboard with `/workflow status`
-- architecture memory dashboard and editor via `/architecture`
-- dev-planner aliases: `planner` and `architect`
-- persona-based model routing via `agent/models.json`
-- session effort overrides with `/effort`
-- dedicated verifier persona with verdict enforcement guidance
-- change-type-aware verification templates for frontend, backend, CLI, config, refactor, and bug-fix work
-- auto persona switching with confirmation
-- deeper project detection for nested roots and monorepos
-- macOS-aware shell guidance for BSD utility differences
-- prompt-section caching with `/context refresh`
-- manual context compaction with workflow-preserving instructions via `/context compact`
-- large bash-output persistence into Pi session artifacts with inline previews
-- project memory at `.pi/memory/project-memory.md`, with per-session opt-out
-- optional worktree-routed execution for risky edits and verification, stored under the host system temp directory
-- verifier focus and workflow prompts stay aligned with the active worktree
-- `/stop` requests abort of current work and blocks new tool calls until `/stop resume`
-- file-tool path normalization maps obvious repo-root-relative paths into the active cwd/worktree
-- failed file reads/edits include basename matches when the requested path appears to be in the wrong directory
-- project-local overrides via `.pi/profiles.json`, `.pi/models.json`, and `.pi/guardrails.json`
-- workflow enforcement through Pi extensions
+- default-off builder delegation (`/builder`), subagents with an explicit capability policy, and `/subagent-runs` visibility
+- automatic oMLX server launch on session start, persona-based model routing, `/effort` overrides
+- context management: prompt-section caching and manual compaction (`/context`)
+- project memory at `.pi/memory/project-memory.md` and optional worktree-routed execution
+- session reporting (`/report`), hard stop (`/stop`), project-local config overrides
 - harness evals and model-comparison scenarios under `evals/`
-- session reporting with model, input/output tokens, prompt detail, elapsed time, and estimated equivalent manual effort; `/report` saves a Markdown file by default
-- subagent delegation for long builder tasks, second opinions, parallel review, chains, and background scouting
-- `/subagent-runs` visibility for local async subagent status and event files
+- macOS-aware shell guidance, path normalization, and worktree staging
 
 ## Subagents
-This setup includes `pi-subagents` for child-agent delegation. Builder delegation is off by default so parent-session tool calls remain visible; toggle it with `/builder on` only for large context-heavy work.
+This setup includes `pi-subagents` for child-agent delegation. Builder delegation is off by default so parent-session tool calls remain visible; toggle it with `/builder on` only for large context-heavy work. What each child agent may do — tools, edit rights, task capsule and return fields — is defined in [`subagents.capabilities.json`](subagents.capabilities.json).
 
-Use it when a task benefits from another focused Pi session:
-- `scout` for fresh-context exploration before implementation
-- `planner` for focused child-generated plans or planner acceptance
-- `worker` for executing an already clear plan in a bounded child context
-- `reviewer` for fresh review, parallel review, and review loops
-- `oracle` for second opinions before risky decisions
-
-Keep the parent session as the orchestrator. Child agents should receive compact task capsules and return concise results only: changed files, summary, validation evidence, unresolved risks, and blocking questions. For everyday small edits and direct questions, the normal persona workflow is simpler and faster.
-
-Use `/subagent-runs status` to inspect async background run status files and `/subagent-runs events [run-id-prefix]` to show the latest event tail when a background child is running.
+Use subagents for second opinions, parallel review, background scouting, or one bounded worker for a large approved task; keep the parent session as the orchestrator. `/subagent-runs status` and `/subagent-runs events [run-id-prefix]` inspect local async background runs.
 
 See [`SUBAGENTS.md`](SUBAGENTS.md) for a tutorial and recommended local workflows.
 
@@ -167,7 +144,7 @@ Each project can keep durable architecture memory in:
 
 Use the root file for the current system overview: aim, targets, entry points, data flow, design principles, invariants, validation strategy, and known constraints. If a target-specific section starts crowding the overview, split it into one Markdown file per app, library, service, or tool under `.pi/architecture/`.
 
-Architecture memory is current-state documentation, not a changelog. Dev personas read it automatically in the workflow prompt, and builder updates it after planner acceptance for an architecture-sensitive change.
+Architecture memory is current-state documentation, not a changelog. When personas read it and when builder updates it is defined in the role prompts in `extensions/*.ts`.
 
 ## oMLX Server Startup
 Pi starts the local oMLX server automatically on each session start by running:

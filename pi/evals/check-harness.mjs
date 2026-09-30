@@ -55,8 +55,24 @@ compileRules("deny", guardrails.deny);
 compileRules("confirm", guardrails.confirm);
 
 const denyRules = (guardrails.deny ?? []).map((rule) => new RegExp(rule.command));
-for (const command of ["sudo whoami", "pip install requests", "python -m pip install requests", "rm -rf /"]) {
+const confirmRules = (guardrails.confirm ?? []).map((rule) => new RegExp(rule.command));
+for (const command of [
+  "sudo whoami",
+  "pip install requests",
+  "pip3 install requests",
+  "python -m pip install requests",
+  "python3 -m pip install requests",
+  "rm -rf /",
+  "rm -fr /",
+  "rm -rf ~/project",
+]) {
   check(`guardrail denies ${command}`, denyRules.some((rule) => rule.test(command)));
+}
+for (const command of ["rm -rf src", "rm -fr build"]) {
+  check(`guardrail confirms ${command}`, !denyRules.some((rule) => rule.test(command)) && confirmRules.some((rule) => rule.test(command)));
+}
+for (const command of ["rm file.txt", "pixi run pytest", "pixi add requests"]) {
+  check(`guardrail allows ${command}`, ![...denyRules, ...confirmRules].some((rule) => rule.test(command)));
 }
 
 check("model comparison suite has scenarios", Array.isArray(suite.scenarios) && suite.scenarios.length >= 6);
