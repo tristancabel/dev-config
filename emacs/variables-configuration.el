@@ -1,4 +1,4 @@
-;;; variableconfiguration
+;;; variables-configuration.el --- Editor settings -*- lexical-binding: t; -*-
 ;;;
 
 ;; don't auto-save and back up files

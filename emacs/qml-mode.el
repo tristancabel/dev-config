@@ -1,4 +1,4 @@
-;; QML Mode
+;;; qml-mode.el --- QML editing mode -*- lexical-binding: t; -*-
 
 (defvar qml-mode-hook nil)
 

@@ -188,6 +188,29 @@ class Tests(unittest.IsolatedAsyncioTestCase):
         for name in ('funes_recall', 'funes_get', 'funes_status'):
             self.assertIsNone(await self.call(name))
 
+    async def test_peon_events_and_opt_out(self):
+        import json
+        load('peon').setup(self.api)
+        process = SimpleNamespace(communicate=AsyncMock(return_value=(b'', b'')))
+        with patch('shutil.which', return_value='/trusted/peon'), patch(
+            'asyncio.create_subprocess_exec', AsyncMock(return_value=process)
+        ) as spawn, patch.dict(os.environ, {'TAU_PEON_PING': '1'}):
+            for event, hook in [('session_start', 'SessionStart'), ('agent_start', 'UserPromptSubmit'),
+                                ('agent_end', 'Stop'), ('session_shutdown', 'SessionEnd')]:
+                await self.api.hooks[event](None, self.context)
+                payload = json.loads(process.communicate.call_args.args[0])
+                self.assertEqual(payload['hook_event_name'], hook)
+                self.assertEqual(payload['cwd'], str(self.cwd))
+                self.assertEqual(spawn.call_args.args, ('/trusted/peon',))
+            spawn.reset_mock()
+            self.context.has_ui = False
+            await self.api.hooks['agent_end'](None, self.context)
+            spawn.assert_not_called()
+            self.context.has_ui = True
+            with patch.dict(os.environ, {'TAU_PEON_PING': '0'}):
+                await self.api.hooks['agent_end'](None, self.context)
+            spawn.assert_not_called()
+
     def test_real_tau_loader_and_catalog(self):
         paths = TauPaths(home=ROOT, agents_home=self.root / 'agents')
         runtime = ExtensionRuntime(paths=paths, built_in_extensions=())

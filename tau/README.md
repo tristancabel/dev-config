@@ -80,6 +80,16 @@ a hosted provider. No key is stored in the committed configuration.
 
 ## Everyday use
 
+### Peon Ping
+
+The `peon.py` extension forwards interactive session start, agent start/completion,
+and session shutdown events to the installed `peon` executable on PATH. It uses
+your existing Peon Ping packs, volume, and mute settings (`peon pause` / `peon resume`).
+Set `TAU_PEON_PING=0` to disable it for Tau. Missing installations are skipped;
+hook execution is limited to three seconds. Restart Tau or use `/reload` to load it.
+
+### Commands
+
 - `/mode` shows the guard state; `/mode code` is the startup default.
 - `/mode chat` permits project reads, web search and memory, but blocks shell and edits.
 - Ask normally: “Fix this test”, “Search for current documentation”, or

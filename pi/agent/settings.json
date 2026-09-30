@@ -8,7 +8,8 @@
     "npm:pi-subagents",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@plannotator/pi-extension",
-    "npm:pi-session-cleanup"
+    "npm:pi-session-cleanup",
+    "~/.funes/integrations/pi"
   ],
   "lastChangelogVersion": "0.85.1",
   "defaultProvider": "omlx",

@@ -145,7 +145,7 @@ const SUBAGENT_RUN_COMMANDS = ["status", "events", "paths"];
 const BUILDER_DELEGATION_CONTEXT_THRESHOLD = 65;
 const SUBAGENT_EVENT_PREVIEW_LINES = 8;
 const EFFORT_LEVELS: EffortMode[] = ["auto", "off", "minimal", "low", "medium", "high", "xhigh"];
-const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
+const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls", "recall", "get", "scan", "sessions", "sketch", "status"];
 const DEFAULT_PERSONA_PRIORITY = ["conversation", "dev-planner", "scout", "builder", "reviewer", "verifier"];
 const PROFILE_ALIASES: Record<string, string> = {
 	architect: "dev-planner",

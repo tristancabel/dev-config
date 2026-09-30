@@ -1,5 +1,14 @@
 # Pi Advanced Setup
 
+## Funes session memory
+
+Run `funes add pi local` to install the official Pi extension with local retrieval
+and automatic indexing. Restart Pi after installation. Tau's `funes_recall`,
+`funes_get`, and `funes_status` tools read the same local index. Use the same
+`FUNES_HOME` environment variable in both agents if you customize its location.
+Tau currently retrieves indexed history but does not automatically index its own
+sessions. Check the shared index with `funes status`.
+
 ## Personas
 - conversation → default Q&A and web research path
 - scout → read-only exploration
